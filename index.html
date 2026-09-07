@@ -32,7 +32,10 @@
     font-variant-numeric:tabular-nums; font-weight:600; letter-spacing:.2px;
   }
   .res i{width:11px; height:11px; border-radius:3px; display:block; font-style:normal}
-  .dot-coin{background:var(--gold)} .dot-wood{background:var(--wood)}
+  .dot-coin{background:var(--gold)}
+  #uiBag{gap:5px}
+  #uiBag .b{display:flex; align-items:center; gap:2px; font-size:12.5px; font-weight:700}
+  #uiBag .b i{width:8px; height:8px; border-radius:2px}
   .res small{color:var(--dim); font-size:12px; font-weight:500}
 
   #mapwrap{position:fixed; z-index:10; top:14px; right:14px; padding:9px 9px 7px; line-height:0}
@@ -76,6 +79,14 @@
   #shop h2{font-size:17px; letter-spacing:.5px; display:flex; align-items:center; gap:9px; margin-bottom:3px}
   #shop h2 .fl{width:9px; height:9px; border-radius:50%; background:var(--gold); box-shadow:0 0 12px var(--gold)}
   #shop .sub{font-size:12px; color:var(--dim); margin-bottom:15px}
+  #tabs{display:flex; gap:6px; margin:10px 0 8px}
+  .tab{flex:1; padding:7px 0; font-size:12.5px; font-weight:700; font-family:inherit; cursor:pointer;
+    color:var(--dim); background:rgba(255,255,255,.05); border:1px solid var(--line); border-radius:9px}
+  .tab.on{color:#0b111a; background:var(--gold); border-color:var(--gold)}
+  #storebar{display:flex; flex-wrap:wrap; gap:5px 9px; margin-bottom:10px; font-size:11.5px;
+    color:var(--dim); font-variant-numeric:tabular-nums}
+  #storebar span{display:flex; align-items:center; gap:3px}
+  #storebar b{color:var(--txt); font-weight:700}
   .row{display:flex; align-items:center; gap:13px; padding:11px 12px; margin-bottom:7px;
     border:1px solid var(--line); border-radius:11px; background:rgba(255,255,255,.035);
     cursor:pointer; transition:background .12s, border-color .12s, transform .07s}
@@ -146,7 +157,7 @@
 
 <div id="hud">
   <div class="res panel"><i class="dot-coin"></i><span id="uiCoin">0</span></div>
-  <div class="res panel"><i class="dot-wood"></i><span id="uiStack">0</span><small id="uiCap">/3</small></div>
+  <div class="res panel" id="uiBag"><span id="uiStack">0</span><small id="uiCap">/3</small></div>
 </div>
 
 <div id="mapwrap" class="panel">
@@ -161,7 +172,12 @@
 
 <div id="shop" class="panel">
   <h2><span class="fl"></span>캠프 모닥불</h2>
-  <div class="sub">장비를 강화하고 일꾼을 고용합니다.</div>
+  <div id="tabs">
+    <button class="tab on" data-tab="up">강화</button>
+    <button class="tab" data-tab="bld">건물</button>
+    <button class="tab" data-tab="tool">도구</button>
+  </div>
+  <div id="storebar"></div>
   <div id="rows"></div>
   <div class="close"><kbd>E</kbd> 로 어디서나 열고 닫기 · <kbd>ESC</kbd> 닫기</div>
   <button id="reset">기록 초기화</button>
@@ -250,17 +266,29 @@ const CAMP_R = 250;                // 캠프 안마당 반지름
 const radOf = (x,y)=> Math.hypot(x-CX, y-CY);
 const atAng = (ang,rad)=> [ CX+Math.cos(ang)*rad, CY+Math.sin(ang)*rad ];
 
-/* 자원 판매가 — 상위 티어는 '초당 수익'이 확실히 높아야 한다.
-   이전 값(고기 18)은 나무 5개(20)보다도 싸서 곰 사냥이 14% 손해였다(실측). */
-const VAL   = { wood:4, meat:30, ice:180 };
-const GTIME = { wood:1.15, meat:2.6, ice:1.9 };     // 기본 채집/처치 시간(초)
-const COL   = { wood:'#d09454', meat:'#ff8478', ice:'#7fe0ff' };
-const HEX   = { wood:0xd09454, meat:0xff8478, ice:0x7fe0ff };
-const NAME  = { wood:'통나무', meat:'고기', ice:'얼음' };
+/* 자원표. 상위 티어는 '초당 수익'이 확실히 높아야 한다
+   (고기 18이던 시절 나무 5개(20)보다 싸서 곰 사냥이 14% 손해였다 — 실측).
+   tool: 채집에 필요한 곡괭이 등급. 0=맨손, 1=나무곡괭이, 2=돌곡괭이 */
+const RES = {
+  wood : { name:'나무', icon:'🪵', col:'#d09454', hex:0xd09454, val:4,   gt:1.15, tool:0 },
+  stone: { name:'돌',   icon:'🪨', col:'#9aa7b4', hex:0x9aa7b4, val:9,   gt:1.60, tool:1 },
+  hide : { name:'가죽', icon:'🟫', col:'#a9764c', hex:0xa9764c, val:26,  gt:0,    tool:0 },
+  meat : { name:'고기', icon:'🥩', col:'#ff8478', hex:0xff8478, val:30,  gt:2.60, tool:0 },
+  coal : { name:'석탄', icon:'⚫', col:'#55555f', hex:0x55555f, val:44,  gt:1.80, tool:2 },
+  iron : { name:'철',   icon:'⛓️', col:'#cbbfae', hex:0xcbbfae, val:95,  gt:2.20, tool:2 },
+  ice  : { name:'얼음', icon:'🧊', col:'#7fe0ff', hex:0x7fe0ff, val:180, gt:1.90, tool:0 },
+};
+const RKEYS = Object.keys(RES);
+const VAL   = Object.fromEntries(RKEYS.map(k=>[k,RES[k].val]));
+const GTIME = Object.fromEntries(RKEYS.map(k=>[k,RES[k].gt]));
+const COL   = Object.fromEntries(RKEYS.map(k=>[k,RES[k].col]));
+const HEX   = Object.fromEntries(RKEYS.map(k=>[k,RES[k].hex]));
+const NAME  = Object.fromEntries(RKEYS.map(k=>[k,RES[k].name]));
 
 const TRAP_WOOD = 3;    // 함정 1회 가동에 드는 나무 (나무 한 그루 = 4개, 한 그루로 충족)
 const TRAP_WAIT = 3.0;  // 미끼 설치 후 곰이 오기까지
 const BEAR_MEAT = 4;    // 곰 1마리가 주는 고기
+const BEAR_HIDE = 2;    // 곰 1마리가 주는 가죽
 const WARM_DRAIN = 3.5; // 빙하에서 초당 체온 감소 (5는 체온 심부름이 얼음 수익을 다 먹었다)
 const WARM_MEAT  = 45;  // 고기 1개당 체온 회복
 const WARM_WOOD  = 15;  // 나무도 태울 수 있다 — 고기가 없어도 발이 묶이지 않게
@@ -300,7 +328,8 @@ const PADS = [
   { ...(([x,y])=>({x,y}))(atAng(0.35, 850)),  zone:'hunt'    },
   { ...(([x,y])=>({x,y}))(atAng(0.35, 1250)), zone:'glacier' },
 ];
-const CAMP = { x:CX, y:CY, r:78 };                               // 상점 모닥불 = 월드 중심
+const CAMP  = { x:CX, y:CY, r:78 };
+const DEPOT = { ...(([x,y])=>({x,y}))(atAng(3.5,150)), r:56 };   // 캠프 창고 — 재료 보관                               // 상점 모닥불 = 월드 중심
 /* 전초 모닥불 — 바깥에서 체온을 되살리는 곳. 캠프까지 돌아오지 않아도 되게 */
 const FIRES = [ {...(([x,y])=>({x,y}))(atAng(3.0, 860)), r:86},
                 {...(([x,y])=>({x,y}))(atAng(3.0, 1250)), r:86} ];
@@ -327,6 +356,33 @@ const UPG = {
 };
 const HELPER_BASE = 300, HELPER_G = 1.45, HELPER_MAX = 6;
 
+/* ---------------- 제작 ----------------
+   코인 강화와는 별개 트랙. 재료를 캠프 창고에 넣고 만든다.
+   곡괭이가 광물 채집을 게이팅한다 — 마인크래프트와 같은 티어 구조. */
+const BUILDINGS = {
+  store : { icon:'📦', name:'창고',     cost:{wood:25},                 desc:'등짐 +4 · 캠프에 자원을 보관',
+            at:[-118,-58] },
+  saw   : { icon:'🪚', name:'제재소',   cost:{wood:60,stone:20},        desc:'나무 판매가 ×1.6',
+            at:[118,-70], need:'store' },
+  furn  : { icon:'🔥', name:'화로',     cost:{stone:40,coal:15},        desc:'철·석탄 판매가 ×1.5 · 대장간 전제',
+            at:[-130,72], need:'store' },
+  forge : { icon:'⚒️', name:'대장간',   cost:{stone:60,iron:25},        desc:'철 도구 제작 해금',
+            at:[130,74],  need:'furn' },
+  tan   : { icon:'🧵', name:'무두질대', cost:{wood:40,hide:12},         desc:'가죽 판매가 ×1.8 · 모피 제작 해금',
+            at:[0,-140],  need:'store' },
+  lodge : { icon:'🏹', name:'사냥막사', cost:{wood:50,hide:20,iron:10}, desc:'함정이 미끼 없이도 재가동',
+            at:[0,150],   need:'tan' },
+};
+const TOOLS = {
+  pickW : { icon:'⛏️', name:'나무 곡괭이', cost:{wood:12},           desc:'<b>돌</b>을 캘 수 있다', tier:1 },
+  pickS : { icon:'⛏️', name:'돌 곡괭이',   cost:{wood:8,stone:16},   desc:'<b>석탄·철</b>을 캘 수 있다', tier:2, need:'pickW' },
+  axeS  : { icon:'🪓', name:'돌도끼',      cost:{wood:10,stone:14},  desc:'채집 속도 ×1.4' },
+  axeI  : { icon:'⚒️', name:'강철 도끼',   cost:{wood:12,iron:20},   desc:'채집 속도 ×1.9', build:'forge' },
+  glove : { icon:'🧤', name:'가죽 장갑',   cost:{hide:14},           desc:'사거리 +26 · 줍기 +20', build:'tan' },
+  coatF : { icon:'🧥', name:'모피 코트',   cost:{hide:22,wood:8},    desc:'체온 감소 −45%', build:'tan' },
+  sled  : { icon:'🛷', name:'썰매',        cost:{wood:30,iron:14},   desc:'등짐 +8', build:'forge' },
+};
+
 /* ---------------- 상태 ---------------- */
 let S, running = false;
 
@@ -339,6 +395,8 @@ function fresh(){
     coin:0, stack:[],
     axe:0, wide:0, sapl:0, haul:0, reach:0, bag:0, boot:0, sell:0, trade:0,
     trap:0, coat:0, crew:0, helpers:0,
+    store:Object.fromEntries(RKEYS.map(k=>[k,0])),   // 캠프 창고
+    built:{}, tools:{},                              // 지은 건물 / 만든 도구
     plots:freshPlots(),
     warm:100, prestige:0, runs:0,
     px:CX, py:CY+195, t:0, last:Date.now(),
@@ -348,20 +406,33 @@ function fresh(){
 /* round 사용: 1.16 등이 이진수로 정확히 표현되지 않아 floor면 25*1.16이 28로 깎인다 */
 const costOf   = (k)=> Math.round(UPG[k].base * Math.pow(UPG[k].g, S[k]));
 const helperCost= ()=> Math.round(HELPER_BASE * Math.pow(HELPER_G, S.helpers));
-const gatherMul= ()=> 1 + S.axe * 0.18;
-const capacity = ()=> 3 + S.bag;
+const gatherMul= ()=> (1 + S.axe * 0.18) * toolMul();
+const capacity = ()=> 3 + S.bag + storeCap();
 const speed    = ()=> 165 * (1 + S.boot * 0.09);
-const reachOf  = ()=> 62 + S.reach * 11;
+const reachOf  = ()=> 62 + S.reach * 11 + (has('glove')?26:0);
 const sellDelay= ()=> 0.085 / (1 + S.sell * 0.35);
 const helperSpd= ()=> 118 * (1 + S.crew * 0.14);
 const widthOf  = ()=> 1 + S.wide;                       // 동시에 캘 노드 수
 const haulOf   = ()=> 1 + S.haul;                       // 1회 완료당 획득 개수
 const trapWood = ()=> Math.max(1, TRAP_WOOD - S.trap);
 const bearMeat = ()=> BEAR_MEAT + S.trap;
-const warmDrain= ()=> WARM_DRAIN * Math.max(0.2, 1 - S.coat*0.18);
+const warmDrain= ()=> WARM_DRAIN * Math.max(0.15, 1 - S.coat*0.18 - (has('coatF')?0.45:0));
 const maxedOut = (k)=> UPG[k].max!==undefined && S[k]>=UPG[k].max;
+
+/* ---- 제작물 효과 ---- */
+const has      = (t)=> !!(S.tools&&S.tools[t]);
+const built    = (b)=> !!(S.built&&S.built[b]);
+const pickTier = ()=> has('pickS')?2 : has('pickW')?1 : 0;
+const toolMul  = ()=> has('axeI')?1.9 : has('axeS')?1.4 : 1;
+const storeCap = ()=> (built('store')?4:0) + (has('sled')?8:0);
+const sellBonus= (t)=>{
+  if(t==='wood' && built('saw'))  return 1.6;
+  if((t==='iron'||t==='coal') && built('furn')) return 1.5;
+  if(t==='hide' && built('tan'))  return 1.8;
+  return 1;
+};
 const priceMul = ()=> (1 + S.trade * 0.15) * (1 + S.prestige * 0.25);
-const priceOf  = (t)=> Math.max(1, Math.round(VAL[t] * priceMul()));
+const priceOf  = (t)=> Math.max(1, Math.round(VAL[t] * priceMul() * sellBonus(t)));
 
 /* ---------------- 엔티티 ---------------- */
 let NODES=[], TRAPS=[], BEARS=[], DROPS=[], HELPERS=[], PARTS=[], FLOATS=[], COINS=[];
@@ -375,20 +446,27 @@ let NODES=[], TRAPS=[], BEARS=[], DROPS=[], HELPERS=[], PARTS=[], FLOATS=[], COI
    base 는 처음부터 있는 그루, 그 위로 '묘목' 레벨만큼 더 자란다. */
 /* 군락은 (각도, 반지름)으로 심는다 — 띠마다 사방에 흩어지도록 */
 const GROVE_DEF=[
-  ['f1','wood',[[1.1,350],[2.6,350],[4.1,350],[5.6,350]],4],
-  ['f2','wood',[[0.4,535],[1.9,535],[3.4,535],[4.9,535]],4],
-  ['f3','wood',[[1.2,700],[2.7,700],[4.2,700],[5.7,700]],4],
-  ['h1','wood',[[0.9,855],[3.9,855]],3],
-  ['h2','wood',[[2.1,1000],[5.1,1000]],3],
-  ['h3','wood',[[0.6,1135],[3.6,1135]],3],
-  ['g1','wood',[[2.4,1255]],2],
-  ['g1','ice', [[0.9,1255],[4.4,1255]],3],
-  ['g2','ice', [[1.6,1355],[3.6,1355],[5.6,1355]],3],
-  ['g3','ice', [[0.5,1440],[2.5,1440],[4.5,1440]],3],
+  ['f1','wood', [[1.1,350],[2.6,350],[4.1,350],[5.6,350]],4],
+  ['f2','wood', [[0.4,535],[1.9,535],[4.9,535]],4],
+  ['f2','stone',[[3.4,535]],4],
+  ['f3','wood', [[1.2,700],[4.2,700]],4],
+  ['f3','stone',[[2.7,700],[5.7,700]],4],
+  ['h1','wood', [[0.9,855]],3],
+  ['h1','stone',[[3.9,855]],4],
+  ['h2','wood', [[2.1,1000]],3],
+  ['h2','coal', [[5.1,1000]],3],
+  ['h3','wood', [[0.6,1135]],3],
+  ['h3','coal', [[3.6,1135]],3],
+  ['g1','wood', [[2.4,1255]],2],
+  ['g1','ice',  [[0.9,1255],[4.4,1255]],3],
+  ['g2','ice',  [[1.6,1355],[5.6,1355]],3],
+  ['g2','iron', [[3.6,1355]],3],
+  ['g3','ice',  [[0.5,1440],[4.5,1440]],3],
+  ['g3','iron', [[2.5,1440]],3],
 ];
 const GROVES=[];
 for(const [plot,type,spots,base] of GROVE_DEF)
-  for(const [a,r] of spots){ const [x,y]=atAng(a,r); GROVES.push({plot,type,x,y,base,fixed:type==='ice'}); }
+  for(const [a,r] of spots){ const [x,y]=atAng(a,r); GROVES.push({plot,type,x,y,base,fixed:type!=='wood'}); }
 
 /* 함정 — 사냥터 띠에 */
 const TRAP_DEF=[ ['h1',2.3,855], ['h1',5.3,855], ['h2',0.7,1000], ['h3',2.9,1135] ];
@@ -559,6 +637,7 @@ function update(dt){
     for(const n of NODES){
       if(n.amt<=0 || !nodeActive(n)) continue;
       if(n.type==='ice' && S.warm<=0) continue;          // 체온 없으면 얼음은 못 캔다
+      if(RES[n.type].tool > pickTier()) continue;        // 곡괭이 등급이 모자라면 못 캔다
       const d=dist(P.x,P.y,n.x,n.y);
       if(d<R) cand.push({n,d});
     }
@@ -629,11 +708,12 @@ function update(dt){
       if(b.hp<=0){
         BEARS.splice(i,1); if(b.trap) b.trap.bear=null;
         burst(b.x,b.y,'#ff8478',22); sfx.bear();
-        for(let k=0;k<bearMeat();k++){
+        const loot=[...Array(bearMeat()).fill('meat'), ...Array(BEAR_HIDE).fill('hide')];
+        for(const type of loot){
           const a=Math.random()*6.283;
-          DROPS.push({x:b.x,y:b.y,vx:Math.cos(a)*70,vy:Math.sin(a)*70,type:'meat',t:0});
+          DROPS.push({x:b.x,y:b.y,vx:Math.cos(a)*70,vy:Math.sin(a)*70,type,t:0});
         }
-        float(b.x,b.y-40,'고기 x'+bearMeat(),'#ff8478');
+        float(b.x,b.y-40,'고기 x'+bearMeat()+' · 가죽 x'+BEAR_HIDE,'#ff8478');
       }
     }
   }
@@ -642,7 +722,7 @@ function update(dt){
   for(let i=DROPS.length-1;i>=0;i--){
     const d=DROPS[i]; d.t+=dt;
     d.x+=d.vx*dt; d.y+=d.vy*dt; d.vx*=.9; d.vy*=.9;
-    if(d.t>0.35 && S.stack.length<capacity() && dist(P.x,P.y,d.x,d.y)<44+S.reach*9){
+    if(d.t>0.35 && S.stack.length<capacity() && dist(P.x,P.y,d.x,d.y)<44+S.reach*9+(has('glove')?20:0)){
       S.stack.push(d.type); DROPS.splice(i,1); sfx.pick(); burst(d.x,d.y,COL[d.type],5);
     }
   }
@@ -667,6 +747,13 @@ function update(dt){
   } else {
     const chill=Math.max(0,(myR-COLD_R)/(1480-COLD_R));   // 숲 밖부터 서서히
     S.warm = chill>0 ? Math.max(0,S.warm-warmDrain()*chill*dt) : Math.min(100,S.warm+14*dt);
+  }
+
+  /* --- 창고 보관 --- 판매대는 코인, 창고는 제작 재료. 매 왕복 선택이 갈린다 */
+  if(dist(P.x,P.y,DEPOT.x,DEPOT.y)<DEPOT.r && S.stack.length>0 && P.sellT<=0){
+    const t=S.stack.pop(); S.store[t]=(S.store[t]||0)+1; P.sellT=sellDelay();
+    COINS.push({x:P.x,y:P.y-40,tx:DEPOT.x,ty:DEPOT.y,t:0,v:0,res:t});
+    sfx.pick();
   }
 
   /* --- 판매 --- */
@@ -825,6 +912,9 @@ function buildGeo(){
   MAT.fire2=toon(PAL.fire2,{emissive:0xffaa00,emissiveIntensity:.85});
   MAT.wood=toon(PAL.wood); MAT.meat=toon(PAL.meat); MAT.rock=toon(PAL.rock);
   MAT.metal=toon(0x9aa9bb); MAT.snowFlat=lam(PAL.snow);
+  MAT.stone=toon(RES.stone.hex); MAT.coal=toon(RES.coal.hex);
+  MAT.iron=toon(RES.iron.hex); MAT.ironVein=toon(0x8f7d63);
+  MAT.hide=toon(RES.hide.hex);
 }
 
 function mesh(geo,mat,sx,sy,sz){ const m=new TH.Mesh(geo,mat); m.scale.set(sx,sy===undefined?sx:sy,sz===undefined?sx:sz); return m; }
@@ -885,6 +975,38 @@ function buildStatic(){
   }
   camp.add(makeFire(1.35));
   camp.position.set(CAMP.x,0,CAMP.y); scene.add(camp);
+
+  // 캠프 창고 발판
+  {
+    const g=new TH.Group();
+    const disc=mesh(GEO.disc,toonC(0x8fb4d8),52,5,52); disc.position.y=3; disc.receiveShadow=true; g.add(disc);
+    const ring=new TH.Mesh(new TH.TorusGeometry(52,4.5,8,32),toonC(0x8fb4d8));
+    ring.rotation.x=-Math.PI/2; ring.position.y=7; g.add(ring);
+    for(let i=0;i<3;i++){ const b=mesh(GEO.box,MAT.wood,26,18,20);
+      b.position.set(-16+i*16,9+(i===1?18:0),0); b.castShadow=true; g.add(b); }
+    g.position.set(DEPOT.x,0,DEPOT.y); scene.add(g);
+  }
+
+  /* 건물 — 지으면 캠프 안에 나타난다 */
+  GFX.builds={};
+  for(const id in BUILDINGS){
+    const d=BUILDINGS[id], g=new TH.Group();
+    if(id==='store'){ for(let i=0;i<4;i++){ const b=mesh(GEO.box,MAT.wood,30,22,24);
+        b.position.set(-22+(i%2)*44, 11+Math.floor(i/2)*22, 0); b.castShadow=true; g.add(b); } }
+    else if(id==='saw'){ const h=mesh(GEO.box,MAT.trunk,64,40,48); h.position.y=20; h.castShadow=true; g.add(h);
+      const bl=mesh(GEO.disc,MAT.metal,24,3,24); bl.rotation.z=Math.PI/2; bl.position.set(0,44,0); bl.castShadow=true; g.add(bl); g.userData.spin=bl; }
+    else if(id==='furn'){ const b=mesh(GEO.box,MAT.stone,52,46,44); b.position.y=23; b.castShadow=true; g.add(b);
+      const ch=mesh(GEO.cyl,MAT.stone,10,34,10); ch.position.set(14,58,0); ch.castShadow=true; g.add(ch);
+      const fire=mesh(GEO.sphere,MAT.fire1,13,10,8); fire.position.set(0,16,23); g.add(fire); }
+    else if(id==='forge'){ const b=mesh(GEO.box,MAT.stone,58,34,46); b.position.y=17; b.castShadow=true; g.add(b);
+      const an=mesh(GEO.box,MAT.metal,30,16,18); an.position.y=42; an.castShadow=true; g.add(an); }
+    else if(id==='tan'){ for(let i=0;i<2;i++){ const p=mesh(GEO.cyl,MAT.trunk,5,52,5);
+        p.position.set(-26+i*52,26,0); p.castShadow=true; g.add(p); }
+      const sk=mesh(GEO.box,MAT.hide,50,34,3); sk.position.y=36; sk.castShadow=true; g.add(sk); }
+    else if(id==='lodge'){ const b=mesh(GEO.box,MAT.trunk,60,36,44); b.position.y=18; b.castShadow=true; g.add(b);
+      const rf=mesh(GEO.cone7,MAT.hide,46,30,46); rf.position.y=50; rf.castShadow=true; g.add(rf); }
+    g.position.set(CX+d.at[0],0,CY+d.at[1]); g.visible=false; scene.add(g); GFX.builds[id]=g;
+  }
 
   // 전초 모닥불 — 바깥에서 체온을 되살리는 곳
   GFX.fires=FIRES.map(f=>{
@@ -984,6 +1106,28 @@ function makeTree(seed){
   g.userData.stump=stump;
   return g;
 }
+/* 광물 — 바위 덩어리. 철광은 얼룩을 박아 구분한다 */
+function makeRock(seed,type){
+  const R=rng(seed), g=new TH.Group();
+  const alive=new TH.Group(); g.add(alive); g.userData.alive=alive;
+  const base = type==='coal'?MAT.coal : type==='iron'?MAT.ironVein : MAT.stone;
+  for(let i=0;i<3;i++){
+    const r=20+R()*16;
+    const m=mesh(GEO.sphere,base,r*1.25,r*0.85,r);
+    m.position.set((R()-.5)*34, r*0.5, (R()-.5)*34);
+    m.rotation.set(R()*.4,R()*6.28,R()*.4); m.castShadow=true; alive.add(m);
+  }
+  if(type!=='stone'){                        // 광맥 얼룩
+    const spot = type==='coal'?MAT.dark:MAT.iron;
+    for(let i=0;i<4;i++){
+      const m=mesh(GEO.sphere,spot,5+R()*4);
+      m.position.set((R()-.5)*40, 12+R()*22, (R()-.5)*40); alive.add(m);
+    }
+  }
+  const stub=mesh(GEO.sphere,base,15,7,14); stub.position.y=4; stub.visible=false; g.add(stub);
+  g.userData.stump=stub;
+  return g;
+}
 function makeIce(seed){
   const R=rng(seed), g=new TH.Group();
   const alive=new TH.Group(); g.add(alive); g.userData.alive=alive;
@@ -1002,10 +1146,12 @@ function rebuildNodeMeshes(){
   for(const m of GFX.ices)  scene.remove(m);
   GFX.trees=[]; GFX.ices=[];
   NODES.forEach((n,i)=>{
-    const g = n.type==='wood' ? makeTree(1000+i) : makeIce(2000+i);
+    const g = n.type==='wood' ? makeTree(1000+i)
+            : n.type==='ice'  ? makeIce(2000+i)
+            : makeRock(3000+i, n.type);
     g.position.set(n.x,0,n.y); g.userData.node=n;
     scene.add(g);
-    (n.type==='wood'?GFX.trees:GFX.ices).push(g);
+    (n.type==='wood'?GFX.trees:GFX.ices).push(g);   // ices 는 '나무 아닌 것' 전부
   });
 }
 
@@ -1255,6 +1401,11 @@ function draw(dt){
   /* 아직 개간 안 한 바깥을 어둡게 */
   GFX.dark.visible=!!np;
   if(np) GFX.dark.scale.set(fr,fr,1);       // RingGeometry(1,2) 를 스케일해 안쪽 fr, 바깥 2fr
+  /* 지은 건물만 보인다 */
+  for(const id in GFX.builds){
+    const g=GFX.builds[id]; g.visible=!!S.built[id];
+    if(g.visible && g.userData.spin) g.userData.spin.rotation.x=S.t*6;
+  }
   /* 판매대·전초불은 그 구획을 사야 보인다 */
   GFX.pads.forEach(g=>{ const z=g.userData.zone;
     g.visible = PLOTS.some(p=>p.zone===z && S.plots[p.id]); });
@@ -1454,8 +1605,9 @@ function drawOverlay(){
     const [x,y,z]=toScreen(wx,60,wy); if(z>1) continue;
     const ey=y-Math.sin(kk*3.14)*72;
     octx.globalAlpha=1-kk*.5;
-    octx.fillStyle='#ffd23f'; octx.beginPath(); octx.arc(x,ey,8,0,6.284); octx.fill();
-    octx.fillStyle='#8a6600'; octx.font=F.replace('%s',10); octx.fillText('◆',x,ey+3.5);
+    octx.fillStyle = c.res ? RES[c.res].col : '#ffd23f';
+    octx.beginPath(); octx.arc(x,ey,8,0,6.284); octx.fill();
+    if(!c.res){ octx.fillStyle='#8a6600'; octx.font=F.replace('%s',10); octx.fillText('◆',x,ey+3.5); }
   }
   octx.globalAlpha=1;
 }
@@ -1505,6 +1657,15 @@ function drawMinimap(){
 function syncUI(){
   uiCoin.textContent=fmt(S.coin);
   uiStack.textContent=S.stack.length; uiCap.textContent='/'+capacity();
+  // 등짐 내용물을 종류별로
+  {
+    const cnt={}; for(const t of S.stack) cnt[t]=(cnt[t]||0)+1;
+    const html=RKEYS.filter(k=>cnt[k]).map(k=>
+      `<span class="b"><i style="background:${RES[k].col}"></i>${cnt[k]}</span>`).join('');
+    const bag=$('uiBag');
+    if(bag._h!==html){ bag._h=html;
+      bag.innerHTML=`<span id="uiStack">${S.stack.length}</span><small id="uiCap">/${capacity()}</small>`+html; }
+  }
   const cur=zoneAt(P.x,P.y);
   drawMinimap();
   const nm=$('mapname'); const label=cur.name+' · '+Math.round(radOf(P.x,P.y));
@@ -1516,7 +1677,12 @@ function syncUI(){
   $('warmNum').textContent=Math.round(S.warm)+'%';
 
   shopEl.classList.toggle('open',shopOpen);
-  if(shopOpen) renderShop();
+  if(shopOpen){
+    const sb=$('storebar');
+    const html=RKEYS.map(k=>`<span>${RES[k].icon}<b>${S.store[k]||0}</b></span>`).join('');
+    if(sb._h!==html){ sb._h=html; sb.innerHTML=html; }
+    renderShop();
+  }
 
   $('saved').classList.toggle('on',savedT>0);
   const h=hint(), he=$('hint');
@@ -1527,6 +1693,8 @@ function syncUI(){
 
 /* 상점 행 정의. 값은 전부 함수로 — 매 프레임 새로 읽되 DOM 은 그대로 둔다. */
 function shopSpecs(){
+  if(shopTab==='bld')  return craftSpecs('bld');
+  if(shopTab==='tool') return craftSpecs('tool');
   const L=[]; let g='';
   for(const k of Object.keys(UPG)){
     const u=UPG[k];
@@ -1556,6 +1724,29 @@ function shopSpecs(){
   return L;
 }
 
+let shopTab='up';
+/* 건물·도구는 재료로 산다. 가격 표기가 코인과 달라 별도 스펙으로 만든다. */
+function costText(cost){
+  return Object.keys(cost).map(k=>{
+    const have=S.store[k]||0, need=cost[k], ok=have>=need;
+    return `<em style="color:${ok?'#5ed39a':'#ff7a7a'}">${RES[k].icon}${need}</em>`;
+  }).join(' ');
+}
+function craftSpecs(kind){
+  const TBL = kind==='bld' ? BUILDINGS : TOOLS;
+  const done = kind==='bld' ? S.built : S.tools;
+  const act  = kind==='bld' ? doBuild : doCraft;
+  return Object.keys(TBL).map(id=>{
+    const d=TBL[id], lock=craftLocked(d), owned=!!done[id];
+    return { id:kind+'_'+id, icon:d.icon, name:d.name,
+      lv:()=> owned ? '완성' : null,
+      desc:()=> owned ? d.desc : (lock ? '<em style="color:#ff9a7a">'+lock+'</em> · '+d.desc : d.desc),
+      price:()=> owned ? null : costText(d.cost),
+      raw:true,
+      buy: (owned||lock||!canPay(d.cost)) ? null : ()=>act(id) };
+  });
+}
+
 let shopSig='';
 /* DOM 을 매 프레임 새로 만들면 mousedown 과 mouseup 사이에 요소가 사라져 click 이 성립하지 않는다.
    → 행 '구성'이 바뀔 때만 다시 만들고, 평소에는 글자와 상태만 갈아 끼운다. */
@@ -1574,9 +1765,8 @@ function renderShop(){
       d.addEventListener('click',()=>{
         const s=d._spec;
         if(!s||!s.buy){ sfx.deny(); return; }
-        const p=s.price();
-        if(S.coin<p){ sfx.deny(); return; }
-        s.buy(); sfx.buy(); renderShop();
+        if(!s.raw){ const p=s.price(); if(S.coin<p){ sfx.deny(); return; } }
+        s.buy(); if(!s.raw) sfx.buy(); renderShop();
       });
       rowsEl.appendChild(d);
     }
@@ -1584,13 +1774,15 @@ function renderShop(){
   [...rowsEl.children].forEach((d,i)=>{
     const sp=specs[i]; if(!sp || sp.header) return;
     d._spec=sp;
-    const p=sp.price(), lv=sp.lv(), ok=!!sp.buy && S.coin>=p;
+    const p=sp.price(), lv=sp.lv(), ok=!!sp.buy && (sp.raw || S.coin>=p);
     d.classList.toggle('no',!ok);
     const lvEl=d.querySelector('.lv'), dsEl=d.querySelector('.ds'), prEl=d.querySelector('.pr');
     const lvTxt = lv==null ? '' : (lv==='MAX' ? 'MAX' : 'Lv.'+lv);
     if(lvEl.textContent!==lvTxt){ lvEl.textContent=lvTxt; lvEl.style.display=lvTxt?'':'none'; }
     const ds=sp.desc(); if(dsEl.innerHTML!==ds) dsEl.innerHTML=ds;
-    const pr = p==null ? '—' : '◆ '+fmt(p); if(prEl.textContent!==pr) prEl.textContent=pr;
+    const pr = p==null ? '—' : (sp.raw ? p : '◆ '+fmt(p));
+    if(sp.raw){ if(prEl.innerHTML!==pr) prEl.innerHTML=pr; }
+    else if(prEl.textContent!==pr) prEl.textContent=pr;
   });
 }
 
@@ -1616,6 +1808,27 @@ function hint(){
   return '';
 }
 
+/* ---------------- 제작 ---------------- */
+const canPay = (cost)=> Object.keys(cost).every(k=>(S.store[k]||0)>=cost[k]);
+const payFor = (cost)=>{ for(const k in cost) S.store[k]-=cost[k]; };
+function craftLocked(def){
+  if(def.need && !(S.built[def.need]||S.tools[def.need])) return '「'+(BUILDINGS[def.need]||TOOLS[def.need]).name+'」 필요';
+  if(def.build && !built(def.build)) return '「'+BUILDINGS[def.build].name+'」 필요';
+  return null;
+}
+function doBuild(id){
+  const d=BUILDINGS[id]; if(S.built[id]||craftLocked(d)||!canPay(d.cost)) { sfx.deny(); return false; }
+  payFor(d.cost); S.built[id]=true; sfx.buy();
+  float(CX+d.at[0],CY+d.at[1]-40,d.name+' 완성!','#5ed39a'); burst(CX+d.at[0],CY+d.at[1],0x5ed39a,22);
+  return true;
+}
+function doCraft(id){
+  const d=TOOLS[id]; if(S.tools[id]||craftLocked(d)||!canPay(d.cost)) { sfx.deny(); return false; }
+  payFor(d.cost); S.tools[id]=true; sfx.buy();
+  float(P.x,P.y-50,d.name+' 제작!','#ffd23f'); burst(P.x,P.y,0xffd23f,18);
+  return true;
+}
+
 /* ---------------- 모달 ---------------- */
 function modal(title,body,btn,cb){
   $('mTitle').textContent=title; $('mBody').innerHTML=body; $('mBtn').textContent=btn;
@@ -1636,6 +1849,14 @@ function finish(){
 }
 
 /* ---------------- 부팅 ---------------- */
+document.querySelectorAll('#tabs .tab').forEach(b=>{
+  b.onclick=()=>{
+    shopTab=b.dataset.tab;
+    document.querySelectorAll('#tabs .tab').forEach(x=>x.classList.toggle('on',x===b));
+    shopSig=''; renderShop();
+  };
+});
+
 $('reset').onclick=()=>{
   if(!confirm('모든 기록을 지우고 처음부터 시작합니다. 계속할까요?')) return;
   localStorage.removeItem(KEY); location.reload();
