@@ -294,6 +294,12 @@ const TRAP_WOOD = 3;    // 함정 1회 가동에 드는 나무 (나무 한 그�
 const TRAP_WAIT = 3.0;  // 미끼 설치 후 곰이 오기까지
 const BEAR_MEAT = 4;    // 곰 1마리가 주는 고기
 const BEAR_HIDE = 2;    // 곰 1마리가 주는 가죽
+/* 곰이 반격한다 — 위험이 없으면 사냥이 그냥 자원 수거다 */
+const BEAR_AGGRO = 250;  // 이 거리 안이면 쫓아온다
+const BEAR_SPD   = 132;  // 추격 속도 (플레이어 기본 165 보다 느리다)
+const BEAR_HIT_R = 62;   // 때리는 거리
+const BEAR_CD    = 1.7;  // 공격 간격(초)
+const BEAR_LEASH = 520;  // 함정에서 이만큼 멀어지면 포기하고 돌아간다
 const WARM_DRAIN = 3.5; // 빙하에서 초당 체온 감소 (5는 체온 심부름이 얼음 수익을 다 먹었다)
 const WARM_MEAT  = 45;  // 고기 1개당 체온 회복
 const WARM_WOOD  = 15;  // 나무도 태울 수 있다 — 고기가 없어도 발이 묶이지 않게
@@ -385,7 +391,7 @@ const BUILDINGS = {
             at:[130,74],  need:'furn' },
   tan   : { icon:'🧵', name:'무두질대', cost:{wood:22,hide:6},         desc:'가죽 판매가 ×1.8 · 모피 제작 해금',
             at:[0,-140],  need:'store' },
-  lodge : { icon:'🏹', name:'사냥막사', cost:{wood:30,hide:10,iron:6}, desc:'함정이 미끼 없이도 재가동',
+  lodge : { icon:'🏹', name:'사냥막사', cost:{wood:30,hide:10,iron:6}, desc:'곰에게 맞아도 짐을 3개→1개만 놓친다',
             at:[0,150],   need:'tan' },
   smoke : { icon:'🍖', name:'훈연장',   cost:{meat:16,wood:14,stone:8}, desc:'고기 판매가 ×2.0',
             at:[-62,150], need:'store' },
@@ -618,7 +624,7 @@ const sfx={
 };
 
 /* ---------------- 플레이어 ---------------- */
-const P={x:300,y:500,r:19,vx:0,vy:0,face:1,walk:0,act:0,actMax:0,actKind:null,sellT:0,fuelT:0,fullT:0};
+const P={x:300,y:500,r:19,vx:0,vy:0,face:1,walk:0,act:0,actMax:0,actKind:null,sellT:0,fuelT:0,fullT:0,kbx:0,kby:0,kbT:0,hurtT:0};
 
 /* ---------------- 유틸 ---------------- */
 const dist=(a,b,c,d)=>Math.hypot(a-c,b-d);
@@ -650,6 +656,8 @@ function update(dt){
   /* 울타리(현재 경계) 밖으로는 못 나간다. 막지 않고 원을 따라 미끄러지게 한다.
      상점은 캠프 안(중심)이라 갇혀도 강화는 언제나 살 수 있다. */
   let nx=P.x+P.vx*dt, ny=P.y+P.vy*dt;
+  if(P.kbT>0){ P.kbT-=dt; nx+=P.kbx*dt; ny+=P.kby*dt; P.kbx*=0.90; P.kby*=0.90; }
+  if(P.hurtT>0) P.hurtT-=dt;
   const lim=frontier(), rr=radOf(nx,ny);
   if(rr>lim){ const k=lim/rr; nx=CX+(nx-CX)*k; ny=CY+(ny-CY)*k; }
   P.x=clamp(nx,26,W-26); P.y=clamp(ny,26,H-26);
@@ -750,9 +758,20 @@ function update(dt){
   /* --- 곰 --- */
   for(let i=BEARS.length-1;i>=0;i--){
     const b=BEARS[i]; b.ph+=dt; b.hit=Math.max(0,b.hit-dt*4);
-    b.x+=Math.cos(b.ph*0.7)*14*dt; b.y+=Math.sin(b.ph*0.5)*12*dt;
-    b.x=clamp(b.x,b.ox-70,b.ox+70); b.y=clamp(b.y,b.oy-60,b.oy+60);
-    if(!shopOpen && dist(P.x,P.y,b.x,b.y)<66){
+    b.cd=Math.max(0,(b.cd||0)-dt);
+    const pd=dist(P.x,P.y,b.x,b.y);
+    const leashed = dist(b.x,b.y,b.ox,b.oy) > BEAR_LEASH;
+    b.mad = !shopOpen && !leashed && pd < BEAR_AGGRO;
+    if(b.mad){
+      // 추격
+      const dx=P.x-b.x, dy=P.y-b.y, d=Math.hypot(dx,dy)||1;
+      if(pd>BEAR_HIT_R*0.8){ b.x+=dx/d*BEAR_SPD*dt; b.y+=dy/d*BEAR_SPD*dt; }
+      if(pd<BEAR_HIT_R && b.cd<=0){ bearHit(b); }
+    }else{
+      b.x+=Math.cos(b.ph*0.7)*14*dt; b.y+=Math.sin(b.ph*0.5)*12*dt;
+      b.x=clamp(b.x,b.ox-70,b.ox+70); b.y=clamp(b.y,b.oy-60,b.oy+60);
+    }
+    if(!shopOpen && pd<66){
       P.actKind='hunt'; const need=GTIME.meat/gatherMul();
       b.hp-=dt/need; P.act=(1-b.hp)*need; P.actMax=need;
       if(Math.random()<dt*9){ burst(b.x,b.y,'#ffb0a8',2); sfx.chop(); }
@@ -2017,6 +2036,23 @@ function doCraft(id){
   payFor(cost); S.tools[id]=true; sfx.buy();
   float(P.x,P.y-50,d.name+' 제작!','#ffd23f'); burst(P.x,P.y,0xffd23f,18);
   return true;
+}
+
+/* 곰에게 맞았다 — 죽지는 않는다. 짐을 흘리고 뒤로 나가떨어진다 */
+function bearHit(b){
+  b.cd=BEAR_CD;
+  const dx=P.x-b.x, dy=P.y-b.y, d=Math.hypot(dx,dy)||1;
+  P.kbx=dx/d*640; P.kby=dy/d*640; P.kbT=0.34; P.hurtT=0.5;
+  // 짐을 흘린다 (사냥막사가 있으면 덜 흘린다)
+  const lose=Math.min(S.stack.length, built('lodge')?1:3);
+  for(let i=0;i<lose;i++){
+    const t=S.stack.pop(), a=Math.random()*6.283;
+    DROPS.push({x:P.x,y:P.y,vx:Math.cos(a)*150,vy:Math.sin(a)*150,type:t,t:0});
+  }
+  // 체온도 깎인다 (모피 코트가 있으면 절반)
+  S.warm=Math.max(0, S.warm - (has('coatF')?8:16));
+  burst(P.x,P.y,'#ff5a52',18); sfx.bear();
+  if(lose) float(P.x,P.y-56,'짐 '+lose+'개 놓침','#ff7a7a');
 }
 
 /* ---------------- 화이트아웃 (엔딩) ---------------- */
