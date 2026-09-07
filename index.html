@@ -1,0 +1,1681 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>화이트아웃 — 생존 캠프</title>
+<style>
+  :root{
+    --ink:#0d1520; --panel:rgba(14,22,34,.86); --line:rgba(255,255,255,.14);
+    --txt:#e8eef7; --dim:#94a6bd; --gold:#ffd23f; --wood:#d09454; --meat:#ff8478; --ice:#7fe0ff;
+    --ok:#5ed39a; --bad:#ff7a7a;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  html,body{height:100%; overflow:hidden; background:#bfe3f7}
+  body{
+    font-family:"Pretendard","Malgun Gothic","Apple SD Gothic Neo",system-ui,-apple-system,sans-serif;
+    color:var(--txt); user-select:none; -webkit-tap-highlight-color:transparent;
+  }
+  #game,#ov{position:fixed; inset:0; display:block; width:100vw; height:100vh}
+  #game{z-index:0} #ov{z-index:1; pointer-events:none}
+
+  .panel{
+    background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    box-shadow:0 10px 40px rgba(10,30,50,.35);
+  }
+
+  /* ---------- HUD ---------- */
+  #hud{position:fixed; z-index:10; top:14px; left:14px; display:flex; gap:8px; align-items:flex-start; pointer-events:none}
+  .res{
+    display:flex; align-items:center; gap:7px; padding:9px 13px; font-size:15px;
+    font-variant-numeric:tabular-nums; font-weight:600; letter-spacing:.2px;
+  }
+  .res i{width:11px; height:11px; border-radius:3px; display:block; font-style:normal}
+  .dot-coin{background:var(--gold)} .dot-wood{background:var(--wood)}
+  .res small{color:var(--dim); font-size:12px; font-weight:500}
+
+  #mapwrap{position:fixed; z-index:10; top:14px; right:14px; padding:9px 9px 7px; line-height:0}
+  #minimap{width:150px; height:150px; display:block}
+  #mapname{line-height:1.4; text-align:center; font-size:10.5px; color:var(--dim); letter-spacing:.6px; margin-top:5px}
+  #zonebar .track{position:relative; height:7px; border-radius:4px; background:rgba(255,255,255,.08); overflow:hidden; display:flex}
+  #zonebar .seg{height:100%; border-right:1px solid rgba(11,17,26,.85)}
+  #zonebar .seg:last-child{border-right:0}
+  #zonebar .pin{position:absolute; top:-4px; width:3px; height:15px; border-radius:2px; background:#fff; box-shadow:0 0 8px rgba(255,255,255,.9)}
+  #zonebar .labels{display:flex; margin-top:7px; font-size:10.5px; color:var(--dim); letter-spacing:.3px}
+  #zonebar .labels span{text-align:center; white-space:nowrap; overflow:hidden}
+  #zonebar .labels span.on{color:var(--txt); font-weight:700}
+
+  #warmwrap{position:fixed; z-index:10; top:196px; right:14px; padding:10px 13px; width:168px; display:none}
+  #warmwrap.show{display:block}
+  #warmwrap .t{font-size:11px; color:var(--dim); margin-bottom:6px; letter-spacing:.4px; display:flex; justify-content:space-between}
+  #warmbar{height:8px; border-radius:5px; background:rgba(255,255,255,.1); overflow:hidden}
+  #warmfill{height:100%; width:100%; border-radius:5px; background:linear-gradient(90deg,#ff9d5c,#ffd08a); transition:width .12s linear}
+  #warmwrap.low #warmfill{background:linear-gradient(90deg,#ff5c5c,#ff9a6a)}
+
+  #hint{
+    position:fixed; z-index:10; bottom:22px; left:50%; transform:translateX(-50%);
+    padding:11px 20px; font-size:14.5px; letter-spacing:.2px; text-align:center;
+    max-width:min(620px,86vw); line-height:1.5;
+  }
+  #hint b{color:var(--gold)}
+  #hint kbd{background:rgba(255,255,255,.13); border:1px solid rgba(255,255,255,.2); border-bottom-width:2px;
+    border-radius:5px; padding:1px 6px; font-family:inherit; font-size:12.5px; font-weight:700}
+
+  #saved{position:fixed; z-index:10; bottom:22px; right:18px; font-size:11.5px; color:#5b7089;
+    opacity:0; transition:opacity .4s; pointer-events:none; letter-spacing:.3px}
+  #saved.on{opacity:1}
+
+  /* ---------- 상점 ---------- */
+  #shop{
+    position:fixed; z-index:20; top:50%; left:50%; transform:translate(-50%,-50%) scale(.96);
+    width:min(560px,92vw); max-height:84vh; overflow-y:auto; padding:20px 20px 16px;
+    opacity:0; pointer-events:none; transition:opacity .18s, transform .18s;
+  }
+  #shop.open{opacity:1; pointer-events:auto; transform:translate(-50%,-50%) scale(1)}
+  #shop h2{font-size:17px; letter-spacing:.5px; display:flex; align-items:center; gap:9px; margin-bottom:3px}
+  #shop h2 .fl{width:9px; height:9px; border-radius:50%; background:var(--gold); box-shadow:0 0 12px var(--gold)}
+  #shop .sub{font-size:12px; color:var(--dim); margin-bottom:15px}
+  .row{display:flex; align-items:center; gap:13px; padding:11px 12px; margin-bottom:7px;
+    border:1px solid var(--line); border-radius:11px; background:rgba(255,255,255,.035);
+    cursor:pointer; transition:background .12s, border-color .12s, transform .07s}
+  .row:hover{background:rgba(255,255,255,.075); border-color:rgba(255,255,255,.26)}
+  .row:active{transform:scale(.985)}
+  .row.no{opacity:.42; cursor:not-allowed}
+  .row.no:hover{background:rgba(255,255,255,.035); border-color:var(--line)}
+  .row .ic{width:34px; height:34px; flex:0 0 34px; border-radius:9px; display:grid; place-items:center; font-size:17px; background:rgba(255,255,255,.07)}
+  .row .m{flex:1; min-width:0}
+  .row .nm{font-size:14px; font-weight:700; display:flex; align-items:center; gap:7px}
+  .row .lv{font-size:10.5px; color:var(--dim); background:rgba(255,255,255,.09); padding:1.5px 6px; border-radius:5px; font-weight:600}
+  .row .ds{font-size:11.5px; color:var(--dim); margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+  .row .ds em{font-style:normal; color:var(--ok)}
+  .row .pr{font-size:14px; font-weight:800; color:var(--gold); font-variant-numeric:tabular-nums; white-space:nowrap}
+  .row.no .pr{color:var(--bad)}
+  .ghead{font-size:10.5px; font-weight:800; letter-spacing:1.4px; color:#7e93ac;
+    margin:12px 2px 6px; padding-bottom:5px; border-bottom:1px solid rgba(255,255,255,.09)}
+  .ghead:first-child{margin-top:0}
+  #shop .close{margin-top:12px; text-align:center; font-size:11.5px; color:var(--dim)}
+  #reset{margin-top:10px; width:100%; padding:8px; font-size:11px; color:#8794a8; font-family:inherit;
+    background:none; border:1px solid rgba(255,255,255,.1); border-radius:9px; cursor:pointer}
+  #reset:hover{color:var(--bad); border-color:rgba(255,122,122,.45)}
+
+  /* ---------- 모달 / 시작 ---------- */
+  #modal{position:fixed; inset:0; display:none; place-items:center; z-index:40;
+    background:rgba(6,10,16,.6); backdrop-filter:blur(4px)}
+  #modal.open{display:grid}
+  #modal .box{width:min(500px,90vw); padding:30px 28px; text-align:center}
+  #modal h1{font-size:23px; margin-bottom:12px; letter-spacing:.5px}
+  #modal p{font-size:14px; color:var(--dim); line-height:1.75; margin-bottom:22px}
+  #modal p b{color:var(--txt)} #modal p .g{color:var(--gold); font-weight:700}
+  #modal button{padding:11px 30px; font-size:14px; font-weight:700; font-family:inherit; color:#0b111a;
+    background:var(--gold); border:0; border-radius:10px; cursor:pointer; letter-spacing:.3px}
+  #modal button:hover{filter:brightness(1.08)}
+
+  #start{position:fixed; inset:0; display:grid; place-items:center; z-index:50;
+    background:radial-gradient(120% 90% at 50% 30%,#1a2942 0%,#0b111a 70%); cursor:pointer}
+  #start .c{text-align:center}
+  #start h1{font-size:40px; letter-spacing:5px; font-weight:800; margin-bottom:10px}
+  #start .s{font-size:13px; color:var(--dim); letter-spacing:2px; margin-bottom:34px}
+  #start .k{font-size:13px; color:var(--dim); line-height:2.1}
+  #start .k kbd{background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.18); border-bottom-width:2px;
+    border-radius:5px; padding:2px 8px; font-family:inherit; font-weight:700; color:var(--txt)}
+  #start .go{margin-top:32px; font-size:13px; color:var(--gold); letter-spacing:1px; animation:bl 1.6s infinite}
+  #start.err .go{color:var(--bad); animation:none}
+  @keyframes bl{0%,100%{opacity:1}50%{opacity:.35}}
+
+  #zonebar .labels span{white-space:nowrap; overflow:hidden}
+  @media (max-width:820px){
+    #mapwrap{padding:6px 6px 5px}
+    #minimap{width:112px; height:112px}
+    #warmwrap{top:196px; right:14px; left:auto; width:168px}
+    #hint{font-size:13px; padding:9px 14px; bottom:16px}
+  }
+  @media (max-height:560px){
+    #hint{bottom:10px; padding:7px 14px; font-size:12.5px}
+    #shop{padding:14px 16px 12px} #shop .sub{margin-bottom:10px}
+    .row{padding:8px 10px; margin-bottom:5px}
+  }
+  ::-webkit-scrollbar{width:8px} ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15); border-radius:4px}
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+<canvas id="ov"></canvas>
+
+<div id="hud">
+  <div class="res panel"><i class="dot-coin"></i><span id="uiCoin">0</span></div>
+  <div class="res panel"><i class="dot-wood"></i><span id="uiStack">0</span><small id="uiCap">/3</small></div>
+</div>
+
+<div id="mapwrap" class="panel">
+  <canvas id="minimap" width="150" height="150"></canvas>
+  <div id="mapname">캠프</div>
+</div>
+
+<div id="warmwrap" class="panel">
+  <div class="t"><span>체온</span><span id="warmNum">100%</span></div>
+  <div id="warmbar"><div id="warmfill"></div></div>
+</div>
+
+<div id="shop" class="panel">
+  <h2><span class="fl"></span>캠프 모닥불</h2>
+  <div class="sub">장비를 강화하고 일꾼을 고용합니다.</div>
+  <div id="rows"></div>
+  <div class="close"><kbd>E</kbd> 로 어디서나 열고 닫기 · <kbd>ESC</kbd> 닫기</div>
+  <button id="reset">기록 초기화</button>
+</div>
+
+<div id="hint" class="panel"></div>
+<div id="saved">저장됨</div>
+
+<div id="modal"><div class="box panel">
+  <h1 id="mTitle"></h1><p id="mBody"></p><button id="mBtn"></button>
+</div></div>
+
+<div id="start"><div class="c">
+  <h1>화이트아웃</h1>
+  <div class="s">S U R V I V A L　C A M P</div>
+  <div class="k">
+    <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> 이동<br>
+    자원 옆에 서면 자동으로 채집합니다<br>
+    등짐이 차면 <b style="color:var(--gold)">노란 발판</b>으로 가서 판매<br>
+    <kbd>E</kbd> 강화 상점
+  </div>
+  <div class="go" id="startGo">엔진 불러오는 중…</div>
+</div></div>
+
+<!-- GLTFLoader 가 'three' 를 베어 스펙으로 임포트하므로 import map 이 필요하다 -->
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+
+<!-- three.js r185 는 UMD 빌드가 없어 ESM 으로 불러온 뒤 전역에 올린다.
+     vendor/ 를 먼저 보고, 없을 때만 CDN 으로 떨어진다 (오프라인·itch.io 배포 대응) -->
+<script type="module">
+  const LOCAL='./vendor/three.module.min.js';
+  const CDN='https://cdnjs.cloudflare.com/ajax/libs/three.js/0.185.1/three.module.min.js';
+  const go=document.getElementById('startGo');
+  let T=null, src='';
+  try{ T=await import(LOCAL); src='local'; }
+  catch(e1){
+    try{ T=await import(CDN); src='cdn'; }
+    catch(e2){
+      console.error('three.js 로드 실패 (local & cdn)',e1,e2);
+      dispatchEvent(new CustomEvent('three-fail',{detail:String(e2)}));
+    }
+  }
+  if(T){
+    window.THREE=T; window.__threeSrc=src;
+
+    // 캐릭터 모델 — 실패해도 게임은 절차적 캐릭터로 돌아간다 (치명적이지 않음)
+    if(src==='local'){
+      try{
+        go.textContent='캐릭터 불러오는 중…';
+        const [{GLTFLoader},SkeletonUtils,BGU]=await Promise.all([
+          import('./vendor/jsm/loaders/GLTFLoader.js'),
+          import('./vendor/jsm/utils/SkeletonUtils.js'),
+          import('./vendor/jsm/utils/BufferGeometryUtils.js'),
+        ]);
+        window.BufferGeometryUtils=BGU;
+        const loader=new GLTFLoader();
+        const [char,axe]=await Promise.all([
+          loader.loadAsync('./assets/Rogue_Hooded.glb'),
+          loader.loadAsync('./assets/axe_1handed.gltf').catch(()=>null),
+        ]);
+        window.SkeletonUtils=SkeletonUtils;
+        window.CHAR_GLB=char; window.AXE_GLB=axe;
+      }catch(e){ console.warn('캐릭터 모델 로드 실패 — 절차적 캐릭터로 진행',e); }
+    }
+    dispatchEvent(new Event('three-ready'));
+  }
+</script>
+
+<script>
+"use strict";
+/* =========================================================================
+   화이트아웃 — 생존 캠프
+   Arcade Idle 구조: 액티브(조작·채집·스태킹) + 아이들(일꾼·오프라인) + 메타(언락·강화)
+   렌더러: three.js 로우폴리 3D  /  게임 로직은 렌더러와 완전히 분리돼 있다.
+   ========================================================================= */
+
+/* ---------------- 설정 ---------------- */
+/* 캠프를 한가운데 두고 사방으로 넓혀 나가는 동심원 구조.
+   구획을 '동심 띠'로 두면 울타리는 항상 하나(현재 경계선)뿐이고,
+   확장이 곧 그 울타리가 바깥으로 밀려나는 것이 된다. */
+const W = 3100, H = 3100;          // 월드 크기 (x, y) → 3D 에서는 (x, 0, y)
+const CX = W/2, CY = H/2;          // 캠프 중심
+const CAMP_R = 250;                // 캠프 안마당 반지름
+const radOf = (x,y)=> Math.hypot(x-CX, y-CY);
+const atAng = (ang,rad)=> [ CX+Math.cos(ang)*rad, CY+Math.sin(ang)*rad ];
+
+/* 자원 판매가 — 상위 티어는 '초당 수익'이 확실히 높아야 한다.
+   이전 값(고기 18)은 나무 5개(20)보다도 싸서 곰 사냥이 14% 손해였다(실측). */
+const VAL   = { wood:4, meat:30, ice:180 };
+const GTIME = { wood:1.15, meat:2.6, ice:1.9 };     // 기본 채집/처치 시간(초)
+const COL   = { wood:'#d09454', meat:'#ff8478', ice:'#7fe0ff' };
+const HEX   = { wood:0xd09454, meat:0xff8478, ice:0x7fe0ff };
+const NAME  = { wood:'통나무', meat:'고기', ice:'얼음' };
+
+const TRAP_WOOD = 3;    // 함정 1회 가동에 드는 나무 (나무 한 그루 = 4개, 한 그루로 충족)
+const TRAP_WAIT = 3.0;  // 미끼 설치 후 곰이 오기까지
+const BEAR_MEAT = 4;    // 곰 1마리가 주는 고기
+const WARM_DRAIN = 3.5; // 빙하에서 초당 체온 감소 (5는 체온 심부름이 얼음 수익을 다 먹었다)
+const WARM_MEAT  = 45;  // 고기 1개당 체온 회복
+const WARM_WOOD  = 15;  // 나무도 태울 수 있다 — 고기가 없어도 발이 묶이지 않게
+const COLD_R     = 780; // 이 반지름(숲 끝)부터 추워지기 시작한다
+const SAPLING_MAX = 3;  // '묘목' 최대 레벨 — UPG 가 참조하므로 반드시 그보다 위에 있어야 한다
+const FLARE_COST = 120000;
+
+const ZONES = [
+  /* 구역 색은 아주 옅게만 — 진하면 색칠한 판이 붙어 있는 것처럼 보인다 */
+  { id:'camp',    name:'캠프',    g:0xf6f2ea },
+  { id:'forest',  name:'서리 숲', g:0xedf6ef },
+  { id:'hunt',    name:'사냥터',  g:0xe9f0f8 },
+  { id:'glacier', name:'빙하',    g:0xdcecfa },
+];
+
+/* 구획 — 캠프에서 바깥으로 뻗는 동심 띠. 안쪽부터 하나씩 산다. */
+const PLOTS = [
+  { id:'f1', zone:'forest',  r0:250,  r1:450,  cost:0,      name:'캠프 앞 숲' },
+  { id:'f2', zone:'forest',  r0:450,  r1:620,  cost:300,    name:'숲 바깥' },
+  { id:'f3', zone:'forest',  r0:620,  r1:780,  cost:1200,   name:'깊은 숲' },
+  { id:'h1', zone:'hunt',    r0:780,  r1:930,  cost:4000,   name:'사냥터' },
+  { id:'h2', zone:'hunt',    r0:930,  r1:1070, cost:11000,  name:'바깥 사냥터' },
+  { id:'h3', zone:'hunt',    r0:1070, r1:1200, cost:28000,  name:'설원' },
+  { id:'g1', zone:'glacier', r0:1200, r1:1310, cost:65000,  name:'빙하 입구' },
+  { id:'g2', zone:'glacier', r0:1310, r1:1400, cost:150000, name:'빙하 지대' },
+  { id:'g3', zone:'glacier', r0:1400, r1:1480, cost:350000, name:'빙벽' },
+];
+const plotAt   = (x,y)=>{ const r=radOf(x,y); return PLOTS.find(p=>r>=p.r0&&r<p.r1)||null; };
+const plotOpen = id => !id || (S.plots && S.plots[id]);
+/* 지금까지 넓힌 바깥 경계 — 울타리이자 이동 한계 */
+const frontier = ()=>{ let m=CAMP_R; for(const p of PLOTS) if(S.plots[p.id]) m=Math.max(m,p.r1); return m; };
+const nextPlot = ()=> PLOTS.find(p=>!S.plots[p.id]) || null;
+
+/* 판매 발판 — 각 구역 안쪽 가장자리, 캠프에서 동쪽으로 뻗는 '길' 위에 둔다 */
+const PADS = [
+  { ...(([x,y])=>({x,y}))(atAng(0.35, 330)),  zone:'forest'  },
+  { ...(([x,y])=>({x,y}))(atAng(0.35, 850)),  zone:'hunt'    },
+  { ...(([x,y])=>({x,y}))(atAng(0.35, 1250)), zone:'glacier' },
+];
+const CAMP = { x:CX, y:CY, r:78 };                               // 상점 모닥불 = 월드 중심
+/* 전초 모닥불 — 바깥에서 체온을 되살리는 곳. 캠프까지 돌아오지 않아도 되게 */
+const FIRES = [ {...(([x,y])=>({x,y}))(atAng(3.0, 860)), r:86},
+                {...(([x,y])=>({x,y}))(atAng(3.0, 1250)), r:86} ];
+
+/* 업그레이드. group 으로 상점에서 묶어 보여준다.
+   max 가 있는 항목은 배율이 강해서 상한을 둔다. */
+const UPG = {
+  axe  :{ g0:'채집', icon:'🪓', name:'도끼',     base:12,   g:1.16, desc:l=>`채집 속도 +${l*18}%` },
+  wide :{ g0:'채집', icon:'🪵', name:'동시 벌목', base:900,  g:2.3, max:5, desc:l=>`동시에 ${1+l}그루` },
+  sapl :{ g0:'채집', icon:'🌱', name:'묘목',     base:1200, g:3.4, max:SAPLING_MAX, desc:l=>`군락마다 +${l}그루` },
+  haul :{ g0:'채집', icon:'🧺', name:'한 아름',   base:1500, g:3.0, max:3, desc:l=>`한 번에 ${1+l}개` },
+  // 사거리는 군락 하나를 덮으면 그 이상 의미가 없다 → 상한을 두고, 대신 줍기 반경도 같이 올린다
+  reach:{ g0:'채집', icon:'🧤', name:'긴 팔',     base:200,  g:1.34, max:4, desc:l=>`사거리 ${62+l*11} · 줍기 ${44+l*9}` },
+
+  bag  :{ g0:'운반', icon:'🎒', name:'등짐',     base:24,   g:1.20, desc:l=>`최대 ${3+l}개 운반` },
+  boot :{ g0:'운반', icon:'🥾', name:'설피',     base:70,   g:1.19, desc:l=>`이동 속도 +${l*9}%` },
+  sell :{ g0:'운반', icon:'💰', name:'장부',     base:320,  g:1.22, desc:l=>`판매 속도 ×${(1+l*0.35).toFixed(2)}` },
+  trade:{ g0:'운반', icon:'⚖️', name:'거래술',   base:120,  g:1.17, desc:l=>`판매가 +${l*15}%` },
+
+  trap :{ g0:'생존', icon:'🪤', name:'덫 개량',   base:1800, g:2.2, max:2, desc:l=>`미끼 나무 ${Math.max(1,TRAP_WOOD-l)}개 · 고기 ${BEAR_MEAT+l}개` },
+  coat :{ g0:'생존', icon:'🧥', name:'방한복',   base:2500, g:1.55, max:4, desc:l=>`체온 감소 −${l*18}%` },
+
+  crew :{ g0:'일꾼', icon:'📯', name:'호각',     base:600,  g:1.28, desc:l=>`일꾼 속도 +${l*14}%` },
+};
+const HELPER_BASE = 300, HELPER_G = 1.45, HELPER_MAX = 6;
+
+/* ---------------- 상태 ---------------- */
+let S, running = false;
+
+function freshPlots(){
+  const o={}; for(const p of PLOTS) o[p.id] = p.cost===0;   // 각 구역의 첫 구획은 무료
+  return o;
+}
+function fresh(){
+  return {
+    coin:0, stack:[],
+    axe:0, wide:0, sapl:0, haul:0, reach:0, bag:0, boot:0, sell:0, trade:0,
+    trap:0, coat:0, crew:0, helpers:0,
+    plots:freshPlots(),
+    warm:100, prestige:0, runs:0,
+    px:CX, py:CY+195, t:0, last:Date.now(),
+  };
+}
+/* 파생 수치 — 조사한 아이들 경제 공식을 그대로 사용 */
+/* round 사용: 1.16 등이 이진수로 정확히 표현되지 않아 floor면 25*1.16이 28로 깎인다 */
+const costOf   = (k)=> Math.round(UPG[k].base * Math.pow(UPG[k].g, S[k]));
+const helperCost= ()=> Math.round(HELPER_BASE * Math.pow(HELPER_G, S.helpers));
+const gatherMul= ()=> 1 + S.axe * 0.18;
+const capacity = ()=> 3 + S.bag;
+const speed    = ()=> 165 * (1 + S.boot * 0.09);
+const reachOf  = ()=> 62 + S.reach * 11;
+const sellDelay= ()=> 0.085 / (1 + S.sell * 0.35);
+const helperSpd= ()=> 118 * (1 + S.crew * 0.14);
+const widthOf  = ()=> 1 + S.wide;                       // 동시에 캘 노드 수
+const haulOf   = ()=> 1 + S.haul;                       // 1회 완료당 획득 개수
+const trapWood = ()=> Math.max(1, TRAP_WOOD - S.trap);
+const bearMeat = ()=> BEAR_MEAT + S.trap;
+const warmDrain= ()=> WARM_DRAIN * Math.max(0.2, 1 - S.coat*0.18);
+const maxedOut = (k)=> UPG[k].max!==undefined && S[k]>=UPG[k].max;
+const priceMul = ()=> (1 + S.trade * 0.15) * (1 + S.prestige * 0.25);
+const priceOf  = (t)=> Math.max(1, Math.round(VAL[t] * priceMul()));
+
+/* ---------------- 엔티티 ---------------- */
+let NODES=[], TRAPS=[], BEARS=[], DROPS=[], HELPERS=[], PARTS=[], FLOATS=[], COINS=[];
+
+/* 구획별 배치. 사냥터·빙하에도 나무를 둔다 —
+   "나무 → 함정 → 고기" 소비 사슬은 유지하되 맵을 가로지르는 심부름은 없앤다. */
+/* 자원은 '군락'으로 심는다 — 흩어 놓으면 사거리·동시 벌목 업그레이드가 아무 효과가 없다.
+   군락 내 간격 65~80: 기본 사거리(62)로는 1그루, 사거리를 올릴수록 2~3그루가 한꺼번에 잡힌다. */
+/* 자원은 '군락'으로 심는다 — 흩어 놓으면 사거리·동시 벌목 업그레이드가 아무 효과가 없다.
+   군락 중심 + 나선(황금각) 배치라 그루 수만 바꾸면 알아서 뭉친 모양이 된다.
+   base 는 처음부터 있는 그루, 그 위로 '묘목' 레벨만큼 더 자란다. */
+/* 군락은 (각도, 반지름)으로 심는다 — 띠마다 사방에 흩어지도록 */
+const GROVE_DEF=[
+  ['f1','wood',[[1.1,350],[2.6,350],[4.1,350],[5.6,350]],4],
+  ['f2','wood',[[0.4,535],[1.9,535],[3.4,535],[4.9,535]],4],
+  ['f3','wood',[[1.2,700],[2.7,700],[4.2,700],[5.7,700]],4],
+  ['h1','wood',[[0.9,855],[3.9,855]],3],
+  ['h2','wood',[[2.1,1000],[5.1,1000]],3],
+  ['h3','wood',[[0.6,1135],[3.6,1135]],3],
+  ['g1','wood',[[2.4,1255]],2],
+  ['g1','ice', [[0.9,1255],[4.4,1255]],3],
+  ['g2','ice', [[1.6,1355],[3.6,1355],[5.6,1355]],3],
+  ['g3','ice', [[0.5,1440],[2.5,1440],[4.5,1440]],3],
+];
+const GROVES=[];
+for(const [plot,type,spots,base] of GROVE_DEF)
+  for(const [a,r] of spots){ const [x,y]=atAng(a,r); GROVES.push({plot,type,x,y,base,fixed:type==='ice'}); }
+
+/* 함정 — 사냥터 띠에 */
+const TRAP_DEF=[ ['h1',2.3,855], ['h1',5.3,855], ['h2',0.7,1000], ['h3',2.9,1135] ];
+/* 나선 배치 — i번째 그루의 군락 내 위치 */
+function grovePos(g,i){
+  if(i===0) return [g.x,g.y];
+  const a=i*2.3999963, r=46+18*Math.sqrt(i);
+  return [ g.x+Math.cos(a)*r, clamp(g.y+Math.sin(a)*r*0.92, 90, H-70) ];
+}
+
+function buildWorld(){
+  NODES=[]; TRAPS=[]; BEARS=[]; DROPS=[]; PARTS=[]; FLOATS=[]; COINS=[];
+  for(const g of GROVES){
+    // 묘목 최대치까지 미리 만들어 두고 need 로 잠근다 (구매해도 월드를 다시 안 지어도 되게)
+    const total = g.base + (g.fixed?0:SAPLING_MAX);
+    for(let i=0;i<total;i++){
+      const [x,y]=grovePos(g,i);
+      NODES.push({ x,y, type:g.type, amt:4, max:4, rt:0, prog:0,
+        sway:Math.random()*6, plot:g.plot, need: Math.max(0, i-g.base+1) });
+    }
+  }
+  for(const [plot,a,r] of TRAP_DEF){
+    const [x,y]=atAng(a,r);
+    TRAPS.push({x,y,fuel:0,wait:0,bear:null,plot});
+  }
+  syncHelpers();
+  if(scene) rebuildNodeMeshes();
+}
+/* 노드가 지금 쓸 수 있는 상태인가 — 구획 구매 + 묘목 레벨 */
+function nodeActive(n){
+  if(!plotOpen(n.plot)) return false;
+  if(n.need>0 && S.sapl<n.need) return false;
+  return true;
+}
+function syncHelpers(){
+  HELPERS.length = 0;
+  for(let i=0;i<S.helpers;i++)
+    HELPERS.push({x:600+Math.random()*160,y:300+Math.random()*400,st:'seek',tg:null,carry:0,prog:0,ph:Math.random()*9});
+}
+
+/* ---------------- 저장 ---------------- */
+const KEY='whiteout_camp_v1';
+function save(){ S.px=P.x; S.py=P.y; S.last=Date.now(); try{ localStorage.setItem(KEY,JSON.stringify(S)); flashSaved(); }catch(e){} }
+function load(){
+  try{
+    const r=localStorage.getItem(KEY); if(!r) return false;
+    const d=JSON.parse(r); S=Object.assign(fresh(),d);
+    // 구획은 병합한다 — 나중에 구획을 추가해도 옛 세이브가 그걸 잠긴 채로 덮어쓰지 않게
+    S.plots=Object.assign(freshPlots(),d.plots||{});
+    if(!Array.isArray(S.stack)) S.stack=[];
+    return true;
+  }catch(e){ return false }
+}
+let savedT=0;
+function flashSaved(){ savedT=1.6; }
+
+/* 오프라인 수익 — 아이들 층의 재접속 동기 */
+function offline(){
+  if(S.helpers<=0 || !S.last) return 0;
+  const sec = Math.min((Date.now()-S.last)/1000, 4*3600);   // 최대 4시간
+  if(sec < 60) return 0;
+  const rate = S.helpers * 3 * priceOf('wood') / 17;        // 일꾼 1명 ≈ 17초당 3개
+  const g = Math.floor(rate*sec);
+  if(g>0){ S.coin+=g; }
+  return g;
+}
+
+/* ---------------- 입력 ---------------- */
+const K={};
+addEventListener('keydown',e=>{
+  K[e.code]=true;
+  if(e.code==='Escape'){ shopOpen=false; shopDismiss=true; shopForce=false; }
+  // 강화 하나 사려고 캠프까지 왕복 8초는 너무 늘어진다 — 어디서든 열 수 있게
+  if(e.code==='KeyE'){ shopForce=!shopForce; shopDismiss=false; if(shopForce) sfx.open(); }
+  if(['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();
+});
+addEventListener('keyup',e=>{ K[e.code]=false });
+addEventListener('blur',()=>{ for(const k in K) K[k]=false });
+
+/* ---------------- 오디오 ---------------- */
+let AC=null;
+function beep(f,d,type='sine',vol=.055){
+  if(!AC) return;
+  const o=AC.createOscillator(), g=AC.createGain();
+  o.type=type; o.frequency.value=f;
+  g.gain.setValueAtTime(vol,AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(.0001,AC.currentTime+d);
+  o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime+d);
+}
+const sfx={
+  chop : ()=>beep(150+Math.random()*40,.07,'triangle',.05),
+  pick : ()=>beep(680,.07,'sine',.05),
+  sell : (i)=>beep(620+Math.min(i,10)*45,.09,'sine',.05),
+  buy  : ()=>{beep(520,.09);setTimeout(()=>beep(780,.13),70)},
+  deny : ()=>beep(150,.13,'sawtooth',.04),
+  bear : ()=>{beep(90,.22,'sawtooth',.06);setTimeout(()=>beep(64,.3,'sawtooth',.05),90)},
+  open : ()=>{beep(400,.1);setTimeout(()=>beep(600,.14),80);setTimeout(()=>beep(900,.2),170)},
+};
+
+/* ---------------- 플레이어 ---------------- */
+const P={x:300,y:500,r:19,vx:0,vy:0,face:1,walk:0,act:0,actMax:0,actKind:null,sellT:0,fuelT:0};
+
+/* ---------------- 유틸 ---------------- */
+const dist=(a,b,c,d)=>Math.hypot(a-c,b-d);
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const fmt=n=>n>=1e9?(n/1e9).toFixed(2)+'B':n>=1e6?(n/1e6).toFixed(2)+'M':n>=1e4?(n/1e3).toFixed(1)+'K':Math.floor(n).toLocaleString('ko-KR');
+function zoneAt(x,y){ const p=plotAt(x,y); const id=p?p.zone:(radOf(x,y)<CAMP_R?'camp':'glacier');
+  return ZONES.find(z=>z.id===id)||ZONES[0]; }
+function float(x,y,txt,c){ FLOATS.push({x,y,txt,c,t:0,life:1.0}); }
+function burst(x,y,c,n=8){ for(let i=0;i<n;i++){const a=Math.random()*6.283,s=30+Math.random()*90;PARTS.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-40,c,t:0,life:.5+Math.random()*.35,r:1.5+Math.random()*2.5});} }
+function rng(seed){ let s=seed>>>0; return ()=>{ s=(s*1664525+1013904223)>>>0; return s/4294967296; }; }
+
+/* ---------------- 업데이트 (렌더러와 무관 — 3D 전환에도 그대로) ---------------- */
+let shopOpen=false, shopDismiss=false, shopForce=false, ending=false;
+
+function update(dt){
+  S.t+=dt;
+  if(savedT>0) savedT-=dt;
+
+  /* --- 이동 --- */
+  let mx=(K.KeyD||K.ArrowRight?1:0)-(K.KeyA||K.ArrowLeft?1:0);
+  let my=(K.KeyS||K.ArrowDown?1:0)-(K.KeyW||K.ArrowUp?1:0);
+  if(ending) mx=my=0;
+  const len=Math.hypot(mx,my)||1;
+  let sp=speed();
+  if(S.warm<=0) sp*=0.55;   // 저체온 페널티
+  P.vx=mx/len*sp; P.vy=my/len*sp;
+
+  /* 울타리(현재 경계) 밖으로는 못 나간다. 막지 않고 원을 따라 미끄러지게 한다.
+     상점은 캠프 안(중심)이라 갇혀도 강화는 언제나 살 수 있다. */
+  let nx=P.x+P.vx*dt, ny=P.y+P.vy*dt;
+  const lim=frontier(), rr=radOf(nx,ny);
+  if(rr>lim){ const k=lim/rr; nx=CX+(nx-CX)*k; ny=CY+(ny-CY)*k; }
+  P.x=clamp(nx,26,W-26); P.y=clamp(ny,26,H-26);
+
+  const moving=(mx||my);
+  if(moving){ P.walk+=dt*10; P.dir=Math.atan2(P.vx,P.vy); if(mx) P.face=mx>0?1:-1; } else P.walk*=0.86;
+
+  /* --- 구획 개간 --- 울타리(경계)에 붙어 서 있으면 채워진다 */
+  const np=nextPlot();
+  for(const p of PLOTS) if(p!==np) p.prog=0;    // 진행 중인 구획까지 지우면 영원히 안 채워진다
+  if(np){
+    const atEdge = Math.abs(radOf(P.x,P.y)-frontier())<95;
+    if(!atEdge || S.coin<np.cost) np.prog=0;
+    if(atEdge && S.coin>=np.cost){
+      np.prog=(np.prog||0)+dt;
+      if(np.prog>=1.4){
+        S.coin-=np.cost; S.plots[np.id]=true; np.prog=0; sfx.open();
+        float(P.x,P.y-40,np.name+' 개간!','#5ed39a'); burst(P.x,P.y,'#ffd23f',26);
+      }
+    }
+  }
+
+  /* --- 상점 --- */
+  const inCamp = !ending && dist(P.x,P.y,CAMP.x,CAMP.y)<CAMP.r;
+  if(!inCamp) shopDismiss=false;          // 캠프를 벗어나면 ESC 로 닫은 상태를 해제
+  if(ending) shopForce=false;
+  const wasOpen=shopOpen;
+  shopOpen = (inCamp && !shopDismiss) || (shopForce && !ending);
+  if(shopOpen&&!wasOpen) sfx.open();
+
+  /* --- 채집 --- */
+  /* 사거리 안의 노드를 가까운 순으로 '동시 벌목' 수만큼 한꺼번에 캔다 */
+  P.actKind=null; P.actTarget=null;
+  for(const n of NODES) n.busy=false;
+  if(!shopOpen && S.stack.length<capacity()){
+    const R=reachOf(), cand=[];
+    for(const n of NODES){
+      if(n.amt<=0 || !nodeActive(n)) continue;
+      if(n.type==='ice' && S.warm<=0) continue;          // 체온 없으면 얼음은 못 캔다
+      const d=dist(P.x,P.y,n.x,n.y);
+      if(d<R) cand.push({n,d});
+    }
+    cand.sort((a,b)=>a.d-b.d);
+    const picked=cand.slice(0,widthOf());
+    if(picked.length){
+      P.actKind='gather'; P.actTarget=picked[0].n;
+      P.actMax=GTIME[picked[0].n.type]/gatherMul();
+      let chopped=false;
+      for(const {n} of picked){
+        if(S.stack.length>=capacity()) break;
+        n.busy=true;
+        const need=GTIME[n.type]/gatherMul();
+        n.prog+=dt;
+        if(n.prog%0.26<dt){ burst(n.x,n.y+8,COL[n.type],2); chopped=true; }
+        if(n.prog>=need){
+          n.prog=0;
+          const take=Math.min(haulOf(), n.amt, capacity()-S.stack.length);
+          n.amt-=take; if(n.amt<=0) n.rt=9;
+          for(let i=0;i<take;i++) S.stack.push(n.type);
+          sfx.pick();
+          float(n.x,n.y-26,'+'+take+' '+NAME[n.type],COL[n.type]);
+          burst(n.x,n.y,COL[n.type],9);
+        }
+      }
+      if(chopped) sfx.chop();                            // 소리는 프레임당 한 번만
+      P.act=P.actTarget.prog;
+    }
+  }
+  for(const n of NODES){
+    if(n.amt<=0){ n.rt-=dt; if(n.rt<=0){ n.amt=n.max; burst(n.x,n.y,'#ffffff',7); } }
+    else if(!n.busy) n.prog=Math.max(0,n.prog-dt*0.6);
+  }
+
+  /* --- 함정에 나무 공급 (No resource left behind) --- */
+  P.fuelT-=dt;
+  for(const t of TRAPS){
+    if(!plotOpen(t.plot)) continue;
+    if(dist(P.x,P.y,t.x,t.y)<64 && t.fuel<trapWood() && !t.bear){
+      const i=S.stack.lastIndexOf('wood');
+      if(i>=0 && P.fuelT<=0){
+        S.stack.splice(i,1); t.fuel++; P.fuelT=0.16; sfx.chop();
+        float(t.x,t.y-24,'미끼 '+t.fuel+'/'+trapWood(),'#d09454');
+        if(t.fuel>=trapWood()){ t.wait=TRAP_WAIT; float(t.x,t.y-42,'설치 완료','#5ed39a'); }
+      }
+    }
+    if(t.wait>0){
+      t.wait-=dt;
+      if(t.wait<=0){
+        t.fuel=0;
+        const b={x:t.x+(Math.random()-.5)*40,y:t.y+(Math.random()-.5)*40,hp:1,ox:t.x,oy:t.y,ph:Math.random()*9,hit:0,trap:t};
+        BEARS.push(b); t.bear=b; sfx.bear();
+        burst(t.x,t.y,'#8a6b4f',18); float(t.x,t.y-46,'곰 출현!','#ff7a7a');
+      }
+    }
+  }
+
+  /* --- 곰 --- */
+  for(let i=BEARS.length-1;i>=0;i--){
+    const b=BEARS[i]; b.ph+=dt; b.hit=Math.max(0,b.hit-dt*4);
+    b.x+=Math.cos(b.ph*0.7)*14*dt; b.y+=Math.sin(b.ph*0.5)*12*dt;
+    b.x=clamp(b.x,b.ox-70,b.ox+70); b.y=clamp(b.y,b.oy-60,b.oy+60);
+    if(!shopOpen && dist(P.x,P.y,b.x,b.y)<66){
+      P.actKind='hunt'; const need=GTIME.meat/gatherMul();
+      b.hp-=dt/need; P.act=(1-b.hp)*need; P.actMax=need;
+      if(Math.random()<dt*9){ burst(b.x,b.y,'#ffb0a8',2); sfx.chop(); }
+      b.hit=1;
+      if(b.hp<=0){
+        BEARS.splice(i,1); if(b.trap) b.trap.bear=null;
+        burst(b.x,b.y,'#ff8478',22); sfx.bear();
+        for(let k=0;k<bearMeat();k++){
+          const a=Math.random()*6.283;
+          DROPS.push({x:b.x,y:b.y,vx:Math.cos(a)*70,vy:Math.sin(a)*70,type:'meat',t:0});
+        }
+        float(b.x,b.y-40,'고기 x'+bearMeat(),'#ff8478');
+      }
+    }
+  }
+
+  /* --- 바닥 아이템 --- */
+  for(let i=DROPS.length-1;i>=0;i--){
+    const d=DROPS[i]; d.t+=dt;
+    d.x+=d.vx*dt; d.y+=d.vy*dt; d.vx*=.9; d.vy*=.9;
+    if(d.t>0.35 && S.stack.length<capacity() && dist(P.x,P.y,d.x,d.y)<44+S.reach*9){
+      S.stack.push(d.type); DROPS.splice(i,1); sfx.pick(); burst(d.x,d.y,COL[d.type],5);
+    }
+  }
+
+  /* --- 체온 (고기 수요를 영구 유지) --- */
+  /* 체온 — 불에서 멀수록 춥다. 구역별 특수 규칙 대신 '거리'가 곧 난이도다. */
+  const myR=radOf(P.x,P.y);
+  let atFire = myR<CAMP_R;                       // 캠프 안마당은 무료로 데워진다
+  let fire=null;
+  for(const f of FIRES) if(dist(P.x,P.y,f.x,f.y)<f.r){ fire=f; break; }
+  if(atFire){ S.warm=Math.min(100,S.warm+40*dt); }
+  else if(fire){
+    if(S.warm<100 && P.fuelT<=0){
+      // 고기가 효율적이지만 나무도 태울 수 있다 — 연료가 없다고 발이 묶이면 안 된다
+      let i=S.stack.lastIndexOf('meat'), gain=WARM_MEAT;
+      if(i<0){ i=S.stack.lastIndexOf('wood'); gain=WARM_WOOD; }
+      if(i>=0){
+        S.stack.splice(i,1); S.warm=Math.min(100,S.warm+gain); P.fuelT=0.3;
+        float(fire.x,fire.y-52,'+'+gain+' 체온','#ff9d5c'); burst(fire.x,fire.y,'#ff9d5c',10); sfx.buy();
+      }
+    }
+  } else {
+    const chill=Math.max(0,(myR-COLD_R)/(1480-COLD_R));   // 숲 밖부터 서서히
+    S.warm = chill>0 ? Math.max(0,S.warm-warmDrain()*chill*dt) : Math.min(100,S.warm+14*dt);
+  }
+
+  /* --- 판매 --- */
+  P.sellT-=dt;
+  let onPad=false;
+  for(const p of PADS){
+    if(dist(P.x,P.y,p.x,p.y)<58){
+      onPad=true;
+      if(S.stack.length>0 && P.sellT<=0){
+        const t=S.stack.pop(), g=priceOf(t);
+        S.coin+=g; P.sellT=sellDelay();
+        COINS.push({x:P.x,y:P.y-40,tx:p.x,ty:p.y,t:0,v:g});
+        sfx.sell(capacity()-S.stack.length);
+      }
+    }
+  }
+  P.onPad=onPad;
+
+  /* --- 일꾼 (아이들 층) --- */
+  for(const h of HELPERS){
+    h.ph+=dt;
+    const hs=helperSpd();
+    if(h.st==='seek'){
+      if(!h.tg||h.tg.amt<=0){
+        let best=null,bd=1e9;
+        for(const n of NODES){
+          if(n.type!=='wood'||n.amt<=0||radOf(n.x,n.y)>780||!nodeActive(n)) continue;  // 일꾼은 숲 범위만
+          const d=dist(h.x,h.y,n.x,n.y); if(d<bd){bd=d;best=n;}
+        }
+        h.tg=best;
+      }
+      if(h.tg){
+        const dx=h.tg.x-h.x,dy=h.tg.y-h.y,d=Math.hypot(dx,dy)||1;
+        if(d<40){ h.st='gather'; h.prog=0; } else { h.x+=dx/d*hs*dt; h.y+=dy/d*hs*dt; h.dir=Math.atan2(dx,dy); }
+      }
+    }else if(h.st==='gather'){
+      h.prog+=dt;
+      if(h.prog>=1.5){
+        h.prog=0;
+        if(h.tg&&h.tg.amt>0){ h.tg.amt--; if(h.tg.amt<=0) h.tg.rt=9; h.carry++; burst(h.x,h.y,COL.wood,3); }
+        if(h.carry>=3) h.st='carry';
+        else if(!h.tg||h.tg.amt<=0) h.st = h.carry>0 ? 'carry' : 'seek';
+      }
+    }else if(h.st==='carry'){
+      const p=PADS[0], dx=p.x-h.x, dy=p.y-h.y, d=Math.hypot(dx,dy)||1;
+      if(d<40){
+        while(h.carry>0){ h.carry--; const g=priceOf('wood'); S.coin+=g; COINS.push({x:h.x,y:h.y-26,tx:p.x,ty:p.y,t:0,v:g}); }
+        h.st='seek'; h.tg=null;
+      } else { h.x+=dx/d*hs*dt; h.y+=dy/d*hs*dt; h.dir=Math.atan2(dx,dy); }
+    }
+  }
+
+  /* --- 이펙트 --- */
+  for(let i=PARTS.length-1;i>=0;i--){ const p=PARTS[i]; p.t+=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=260*dt; if(p.t>p.life) PARTS.splice(i,1); }
+  for(let i=FLOATS.length-1;i>=0;i--){ const f=FLOATS[i]; f.t+=dt; if(f.t>f.life) FLOATS.splice(i,1); }
+  for(let i=COINS.length-1;i>=0;i--){ const c=COINS[i]; c.t+=dt*2.6; if(c.t>=1) COINS.splice(i,1); }
+
+  if(S.t%5<dt) save();
+}
+
+/* =========================================================================
+   3D 렌더러 (three.js) — 여기서부터는 게임 로직을 읽기만 한다
+   ========================================================================= */
+let TH=null, renderer, scene, camera, sun, snowPts;
+const ov=document.getElementById('ov'), octx=ov.getContext('2d');
+const GFX={ trees:[], ices:[], traps:[], bears:[], drops:[], helpers:[], stack:[], flames:[], zones:[], gates:[], player:null };
+let MAT={}, GEO={};
+
+/* 밝고 귀여운 캐주얼 팔레트 */
+const PAL={
+  sky:0xbfe3f7, snow:0xffffff, ground:0xf2f8ff, locked:0x8fa4bb,
+  trunk:0xb9773f, leaf:0x45c97e, leaf2:0x33ad68,
+  ice:0x7fe0ff, iceDeep:0x46c2ee, lockedTint:0xaebecd,
+  bear:0xa9764c, bearDark:0x8a5f3c, snout:0xe0c39a, dark:0x2b2118,
+  coat:0xff5a52, coat2:0xd8433c, skin:0xffd9b8, helper:0x4a90e2, helper2:0x3574bd,
+  pad:0xffd23f, gate:0x8497ad, gateTop:0x9fb0c4, tent:0xff8a5c, tent2:0xe0724a,
+  fire1:0xff8c3a, fire2:0xffd166, wood:0xd09454, meat:0xff8478, rock:0xc3d0de,
+};
+
+/* 지면·받침처럼 넓은 면은 램버트(밴딩 방지), 사물·캐릭터는 툰(셀 셰이딩) */
+function lam(color,extra){ return new TH.MeshLambertMaterial(Object.assign({color},extra||{})); }
+let GRAD=null;
+function toonGrad(steps){
+  const d=new Uint8Array(steps);
+  for(let i=0;i<steps;i++) d[i]=Math.round(255*(i+1)/steps);
+  const t=new TH.DataTexture(d,steps,1,TH.RedFormat);
+  t.minFilter=t.magFilter=TH.NearestFilter; t.generateMipmaps=false; t.needsUpdate=true;
+  return t;
+}
+function toon(color,extra){
+  if(!GRAD) GRAD=toonGrad(4);
+  return new TH.MeshToonMaterial(Object.assign({color,gradientMap:GRAD},extra||{}));
+}
+/* 단색 툰 머티리얼은 색으로 캐시한다.
+   캐릭터마다 새로 만들면 일꾼 6명에 12개가 생기고 드로우콜이 그만큼 쪼개진다. */
+const TOON_CACHE=new Map();
+function toonC(color){
+  if(!TOON_CACHE.has(color)) TOON_CACHE.set(color,toon(color));
+  return TOON_CACHE.get(color);
+}
+
+function initThree(){
+  TH=window.THREE;
+  renderer=new TH.WebGLRenderer({canvas:document.getElementById('game'),antialias:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+  renderer.shadowMap.enabled=true;
+  renderer.shadowMap.type=TH.PCFSoftShadowMap;
+
+  scene=new TH.Scene();
+  scene.background=new TH.Color(PAL.sky);
+  scene.fog=new TH.Fog(PAL.sky,1500,3000);
+
+  camera=new TH.PerspectiveCamera(42,1,10,5200);
+  camera.position.set(P.x,660,P.y+560);
+
+  scene.add(new TH.HemisphereLight(0xffffff,0xc4dcf0,1.55));
+  sun=new TH.DirectionalLight(0xfff4e0,1.65);
+  sun.castShadow=true;
+  sun.shadow.mapSize.set(2048,2048);
+  const sc=sun.shadow.camera;
+  sc.left=-820; sc.right=820; sc.top=820; sc.bottom=-820; sc.near=10; sc.far=2400;
+  sun.shadow.bias=-0.0012;
+  scene.add(sun); scene.add(sun.target);
+
+  buildGeo(); buildStatic(); buildSnow();
+  rebuildNodeMeshes();
+  GFX.player=makeChar(PAL.coat,PAL.coat2,1,true); scene.add(GFX.player);
+  // 일꾼 한 명을 미리 만들어 둔다 — 셰이더를 시작 화면 뒤에서 같이 굽기 위해
+  const warm=makeChar(PAL.helper,PAL.helper2,.82,false);
+  warm.visible=false; scene.add(warm); GFX.helpers.push(warm);
+  // 셰이더 컴파일 + 섀도우맵 초회 렌더를 시작 화면 뒤에서 끝낸다 (안 하면 첫 프레임이 150ms 튄다)
+  try{ renderer.compile(scene,camera); renderer.render(scene,camera); }catch(e){}
+}
+
+function buildGeo(){
+  GEO.cone7  = new TH.ConeGeometry(1,1,7);
+  GEO.cone5  = new TH.ConeGeometry(1,1,5);
+  GEO.cyl    = new TH.CylinderGeometry(1,1,1,8);
+  GEO.sphere = new TH.SphereGeometry(1,10,8);
+  GEO.box    = new TH.BoxGeometry(1,1,1);
+  GEO.capsule= new TH.CapsuleGeometry(15,20,4,10);
+  GEO.torus  = new TH.TorusGeometry(22,5,6,14);
+  GEO.ring   = new TH.TorusGeometry(1,0.30,6,14);
+  GEO.disc   = new TH.CylinderGeometry(1,1,1,28);
+
+  MAT.trunk=toon(PAL.trunk); MAT.leaf=toon(PAL.leaf); MAT.leaf2=toon(PAL.leaf2);
+  MAT.snow=toon(PAL.snow); MAT.ice=toon(PAL.ice,{emissive:0x1a5f7a,emissiveIntensity:.25});
+  MAT.iceDeep=toon(PAL.iceDeep);
+  MAT.bear=toon(PAL.bear); MAT.bearHit=toon(0xd98a6a); MAT.bearDark=toon(PAL.bearDark);
+  MAT.snout=toon(PAL.snout); MAT.dark=toon(PAL.dark);
+  MAT.skin=toon(PAL.skin);
+  MAT.pad=toon(PAL.pad,{emissive:0x9c7a00,emissiveIntensity:.42});
+  MAT.gate=toon(PAL.gate); MAT.gateTop=toon(PAL.gateTop);
+  MAT.tent=toon(PAL.tent); MAT.tent2=toon(PAL.tent2);
+  MAT.fire1=toon(PAL.fire1,{emissive:0xff5500,emissiveIntensity:.75});
+  MAT.fire2=toon(PAL.fire2,{emissive:0xffaa00,emissiveIntensity:.85});
+  MAT.wood=toon(PAL.wood); MAT.meat=toon(PAL.meat); MAT.rock=toon(PAL.rock);
+  MAT.metal=toon(0x9aa9bb); MAT.snowFlat=lam(PAL.snow);
+}
+
+function mesh(geo,mat,sx,sy,sz){ const m=new TH.Mesh(geo,mat); m.scale.set(sx,sy===undefined?sx:sy,sz===undefined?sx:sz); return m; }
+
+/* ---------- 지형 / 고정물 ---------- */
+function buildStatic(){
+  // 바닥 받침 — 월드 밖으로 크게 깔아 가장자리가 안 보이게
+  const base=new TH.Mesh(new TH.PlaneGeometry(W+6000,H+6000), lam(0xeaf2fa));
+  base.rotation.x=-Math.PI/2; base.position.set(W/2,-6,H/2); base.receiveShadow=true; scene.add(base);
+
+  // 구역 지면 — 동심 고리. 안쪽부터 캠프/숲/사냥터/빙하
+  GFX.zones=[];
+  const bandsOf=id=>{ const ps=PLOTS.filter(p=>p.zone===id);
+    return ps.length?[Math.min(...ps.map(p=>p.r0)),Math.max(...ps.map(p=>p.r1))]:[0,CAMP_R]; };
+  ZONES.forEach(z=>{
+    const [r0,r1]= z.id==='camp' ? [0,CAMP_R] : bandsOf(z.id);
+    const outer = z.id==='glacier' ? r1+1400 : r1;      // 바깥 구역은 월드 밖까지 깔아 가장자리를 숨긴다
+    const g=new TH.Mesh(new TH.RingGeometry(r0,outer,72,1), lam(z.g));
+    g.rotation.x=-Math.PI/2; g.position.set(CX, z.id==='camp'?0.4:0, CY); g.receiveShadow=true;
+    scene.add(g); GFX.zones.push({z,mesh:g});
+  });
+
+  // 장식 — 눈더미 / 바위 / 얼음조각 (상호작용 없음, 화면을 덜 비어 보이게)
+  const R=rng(20260905), deco=new TH.Group();
+  for(let i=0;i<70;i++){          // 130개는 드로우콜만 먹고 눈에 잘 띄지도 않는다
+    const a=R()*6.283, rr=CAMP_R+40+R()*1300;
+    const x=CX+Math.cos(a)*rr, y=CY+Math.sin(a)*rr;
+    const zid=zoneAt(x,y).id;
+    const r=18+R()*34;
+    let m;
+    if(zid==='glacier' && R()<.45) m=mesh(GEO.cone5,MAT.iceDeep,r*.5,r*.9,r*.5);
+    else if(R()<.25)               m=mesh(GEO.sphere,MAT.rock,r*.5,r*.34,r*.45);
+    else                           m=mesh(GEO.sphere,MAT.snowFlat,r,r*.28,r*.8);
+    m.position.set(x,r*0.1,y); m.rotation.y=R()*6.28; m.receiveShadow=true; m.castShadow=R()<.4;
+    deco.add(m);
+  }
+  scene.add(deco);
+
+  // 판매 발판
+  PADS.forEach((p,i)=>{
+    const g=new TH.Group();
+    const disc=mesh(GEO.disc,MAT.pad,58,5,58); disc.position.y=3; disc.receiveShadow=true; g.add(disc);
+    const ring=new TH.Mesh(new TH.TorusGeometry(58,5,8,32),MAT.pad);
+    ring.rotation.x=-Math.PI/2; ring.position.y=7; g.add(ring);
+    // 코인 아이콘 기둥
+    const post=mesh(GEO.cyl,MAT.metal,4,46,4); post.position.y=26; post.castShadow=true; g.add(post);
+    const coin=mesh(GEO.disc,MAT.pad,17,4,17); coin.position.y=54; coin.rotation.x=Math.PI/2; coin.castShadow=true; g.add(coin);
+    g.position.set(p.x,0,p.y); g.userData.zone=p.zone;
+    scene.add(g); GFX.pads=GFX.pads||[]; GFX.pads.push(g);
+  });
+
+  // 캠프 — 텐트 + 모닥불
+  const camp=new TH.Group();
+  const tent=mesh(GEO.cone7,MAT.tent,74,96,74); tent.position.set(-96,48,-14); tent.rotation.y=.4; tent.castShadow=true; camp.add(tent);
+  const tent2=mesh(GEO.cone7,MAT.tent2,52,70,52); tent2.position.set(6,35,-96); tent2.rotation.y=1.1; tent2.castShadow=true; camp.add(tent2);
+  for(let i=0;i<4;i++){ // 통나무 울타리
+    const l=mesh(GEO.cyl,MAT.trunk,7,54,7); l.position.set(70+i*26,26,64+ (i%2)*14); l.rotation.z=.12; l.castShadow=true; camp.add(l);
+  }
+  camp.add(makeFire(1.35));
+  camp.position.set(CAMP.x,0,CAMP.y); scene.add(camp);
+
+  // 전초 모닥불 — 바깥에서 체온을 되살리는 곳
+  GFX.fires=FIRES.map(f=>{
+    const wf=new TH.Group(); wf.add(makeFire(1.1));
+    for(let i=0;i<3;i++){ const s=mesh(GEO.cone5,MAT.iceDeep,16,40,16);
+      s.position.set(Math.cos(i*2.1)*66,20,Math.sin(i*2.1)*66); s.castShadow=true; wf.add(s); }
+    wf.position.set(f.x,0,f.y); scene.add(wf); return wf;
+  });
+
+  /* 아직 개간 안 한 바깥 — 어두운 고리 하나로 덮는다 */
+  GFX.dark=new TH.Mesh(new TH.RingGeometry(1,2,72,1),
+    new TH.MeshBasicMaterial({color:0x24405c, transparent:true, opacity:.42}));
+  GFX.dark.rotation.x=-Math.PI/2; GFX.dark.position.set(CX,2,CY); scene.add(GFX.dark);
+
+  /* 울타리 — 현재 경계 하나뿐. 확장하면 이게 바깥으로 밀려난다 */
+  GFX.fence=new TH.Group();
+  const FN=48;
+  for(let i=0;i<FN;i++){
+    const a=i/FN*6.283;
+    const post=mesh(GEO.cyl,MAT.trunk,7,74,7);
+    post.position.set(Math.cos(a),0,Math.sin(a)); post.castShadow=true; GFX.fence.add(post);
+  }
+  GFX.fenceRing=new TH.Mesh(new TH.TorusGeometry(1,0.011,6,72),MAT.trunk);
+  GFX.fenceRing.rotation.x=-Math.PI/2; GFX.fence.add(GFX.fenceRing);
+  GFX.fence.position.set(CX,0,CY); scene.add(GFX.fence);
+
+  // 함정
+  GFX.traps=TRAPS.map(t=>{
+    const g=new TH.Group();
+    const ring=new TH.Mesh(GEO.torus,MAT.metal); ring.rotation.x=-Math.PI/2; ring.position.y=6; ring.castShadow=true; g.add(ring);
+    const pit=mesh(GEO.disc,lam(0x6f7f92),20,3,20); pit.position.y=2; g.add(pit);
+    for(let i=0;i<8;i++){ const a=i/8*6.283; const s=mesh(GEO.cone5,MAT.metal,4,15,4);
+      s.position.set(Math.cos(a)*22,12,Math.sin(a)*22); g.add(s); }
+    const bait=new TH.Group(); bait.position.y=10; g.add(bait); g.userData.bait=bait;
+    for(let i=0;i<TRAP_WOOD;i++){ const l=mesh(GEO.cyl,MAT.wood,4,17,4);
+      l.rotation.z=Math.PI/2; l.rotation.y=i*.6; l.position.set(0,i*5,0); l.visible=false; bait.add(l); }
+    g.position.set(t.x,0,t.y); scene.add(g);
+    return g;
+  });
+}
+
+function makeFire(s){
+  const g=new TH.Group(); g.scale.setScalar(s);
+  for(let i=0;i<3;i++){ const l=mesh(GEO.cyl,MAT.trunk,6,42,6);
+    l.rotation.set(Math.PI/2.3,i*2.1,0); l.position.y=8; l.castShadow=true; g.add(l); }
+  for(let i=0;i<3;i++){
+    const f=mesh(GEO.cone7,i?MAT.fire2:MAT.fire1,17-i*4,40-i*9,17-i*4);
+    f.position.y=26-i*3; g.add(f); GFX.flames.push({m:f,i,base:26-i*3});
+  }
+  const glow=new TH.PointLight(0xffa040,2.2,320,2); glow.position.y=34; g.add(glow);
+  return g;
+}
+
+/* ---------- 자원 노드 ---------- */
+/* 나무 한 그루를 메시 5개로 만들면 76그루에서 드로우콜이 380 늘어난다.
+   줄기+잎3+눈모자를 정점 색으로 '한 덩어리'로 합쳐 그루당 2개(몸통/그루터기)로 줄인다. */
+let TREE_GEO=null;
+function buildTreeGeo(){
+  if(TREE_GEO || !window.BufferGeometryUtils) return TREE_GEO;
+  const parts=[];
+  const add=(geo,color,sx,sy,sz,y)=>{
+    const g=geo.clone();
+    g.scale(sx,sy,sz); g.translate(0,y,0);
+    const c=new TH.Color(color), n=g.getAttribute('position').count;
+    const arr=new Float32Array(n*3);
+    for(let i=0;i<n;i++){ arr[i*3]=c.r; arr[i*3+1]=c.g; arr[i*3+2]=c.b; }
+    g.setAttribute('color',new TH.BufferAttribute(arr,3));
+    g.deleteAttribute('uv');                   // 머지하려면 속성 구성이 같아야 한다
+    parts.push(g);
+  };
+  add(GEO.cyl,   PAL.trunk, 8,44,8,   22);
+  add(GEO.cone7, PAL.leaf,  44,50,44, 48);
+  add(GEO.cone7, PAL.leaf2, 34,44,34, 84);
+  add(GEO.cone7, PAL.leaf,  24,38,24, 116);
+  add(GEO.cone7, PAL.snow,  16,28,16, 146);
+  TREE_GEO=window.BufferGeometryUtils.mergeGeometries(parts,false);
+  return TREE_GEO;
+}
+function makeTree(seed){
+  const R=rng(seed), g=new TH.Group();
+  const alive=new TH.Group(); g.add(alive); g.userData.alive=alive;
+  const merged=buildTreeGeo();
+  if(merged){
+    if(!MAT.treeVC) MAT.treeVC=new TH.MeshToonMaterial({vertexColors:true,gradientMap:GRAD});
+    const body=new TH.Mesh(merged,MAT.treeVC);
+    body.rotation.y=R()*6.28; body.castShadow=true; alive.add(body);
+  }else{                                        // 머지 유틸이 없으면 예전 방식으로
+    const trunk=mesh(GEO.cyl,MAT.trunk,8,44,8); trunk.position.y=22; trunk.castShadow=true; alive.add(trunk);
+    const rs=[44,34,24], hs=[50,44,38], ys=[48,84,116];
+    for(let i=0;i<3;i++){
+      const c=mesh(GEO.cone7,i%2?MAT.leaf2:MAT.leaf,rs[i],hs[i],rs[i]);
+      c.position.y=ys[i]; c.rotation.y=R()*6.28; c.castShadow=true; alive.add(c);
+    }
+    const cap=mesh(GEO.cone7,MAT.snow,16,28,16); cap.position.y=146; cap.castShadow=true; alive.add(cap);
+  }
+  const stump=mesh(GEO.cyl,MAT.trunk,14,18,14); stump.position.y=9; stump.castShadow=true; stump.visible=false; g.add(stump);
+  g.userData.stump=stump;
+  return g;
+}
+function makeIce(seed){
+  const R=rng(seed), g=new TH.Group();
+  const alive=new TH.Group(); g.add(alive); g.userData.alive=alive;
+  for(let i=0;i<3;i++){
+    const h=46+R()*40, r=12+R()*9;
+    const m=mesh(GEO.cone5,i?MAT.ice:MAT.iceDeep,r,h,r);
+    m.position.set((R()-.5)*30,h/2,(R()-.5)*30); m.rotation.z=(R()-.5)*.34; m.rotation.y=R()*6.28;
+    m.castShadow=true; alive.add(m);
+  }
+  const stub=mesh(GEO.cone5,MAT.iceDeep,14,12,14); stub.position.y=6; stub.visible=false; g.add(stub);
+  g.userData.stump=stub;
+  return g;
+}
+function rebuildNodeMeshes(){
+  for(const m of GFX.trees) scene.remove(m);
+  for(const m of GFX.ices)  scene.remove(m);
+  GFX.trees=[]; GFX.ices=[];
+  NODES.forEach((n,i)=>{
+    const g = n.type==='wood' ? makeTree(1000+i) : makeIce(2000+i);
+    g.position.set(n.x,0,n.y); g.userData.node=n;
+    scene.add(g);
+    (n.type==='wood'?GFX.trees:GFX.ices).push(g);
+  });
+}
+
+/* ---------- 캐릭터 ---------- */
+/* ---------- 캐릭터: KayKit Rogue_Hooded (CC0) ---------- */
+const CHAR_SCALE=34.18;                 // 모델 실측 2.223유닛 → 월드 76유닛
+const CHAR_HIDE=['Knife_Offhand','1H_Crossbow','2H_Crossbow','Knife','Throwable'];  // 기본 표시되는 무기 프롭
+const CHAR_ANIM={ idle:'Idle', walk:'Walking_B', chop:'1H_Melee_Attack_Chop' };
+
+/* 캐릭터 머티리얼은 캐시해서 공유한다.
+   메시마다 새로 만들면 캐릭터 5명에 30개가 생기고, 그만큼 셰이더가 새로 컴파일된다
+   (실측: 머티리얼 73개 / 첫 프레임 535ms). */
+const CHAR_MAT={};
+function toonify(o,tint){
+  const m=o.material, c=tint||0xffffff;
+  const key=c+'|'+(m.map?m.map.uuid:'none');
+  if(!CHAR_MAT[key]) CHAR_MAT[key]=new TH.MeshToonMaterial({ map:m.map||null, gradientMap:GRAD, color:c });
+  o.material=CHAR_MAT[key];
+}
+
+function makeCharGLB(tint,scale){
+  const root=new TH.Group();
+  const model=SkeletonUtils.clone(window.CHAR_GLB.scene);
+  model.scale.setScalar(CHAR_SCALE*scale);
+  // 모델 정면은 +Z 다 (망토가 로컬 -Z 쪽에 달려 있다 = 등이 -Z).
+  // 게임도 +Z 를 정면으로 쓰므로 보정 회전이 필요 없다.
+  model.traverse(o=>{
+    if(!(o.isMesh||o.isSkinnedMesh)) return;
+    if(CHAR_HIDE.includes(o.name)){ o.visible=false; return; }
+    o.castShadow=true; o.frustumCulled=false;   // 스킨드 메시는 바운딩이 레스트 포즈라 잘못 컬링된다
+    toonify(o,tint);
+  });
+  root.add(model);
+
+  const mixer=new TH.AnimationMixer(model);
+  const actions={};
+  for(const k in CHAR_ANIM){
+    const clip=window.CHAR_GLB.animations.find(a=>a.name===CHAR_ANIM[k]);
+    if(!clip) continue;
+    const a=mixer.clipAction(clip);
+    a.play(); a.setEffectiveWeight(k==='idle'?1:0);
+    actions[k]=a;
+  }
+
+  // 도끼 — 오른손 슬롯 본에 그대로 매단다 (위치·크기·회전이 모델 기준으로 맞아 있다)
+  let axe=null;
+  const slot=model.getObjectByName('handslotr');
+  if(slot && window.AXE_GLB){
+    axe=window.AXE_GLB.scene.clone(true);
+    axe.traverse(o=>{ if(o.isMesh){ o.castShadow=true; toonify(o); } });
+    slot.add(axe); axe.visible=false;
+  }
+
+  const stack=new TH.Group(); root.add(stack);   // 스택은 루트에 (뼈에 매달면 채집 중에 요동친다)
+
+  // 발밑 링 — 초록 캐릭터가 초록 나무에 묻혀서, 위치를 놓치지 않게 표시한다
+  const ring=new TH.Mesh(new TH.TorusGeometry(26,3.4,8,28),
+    new TH.MeshBasicMaterial({color: tint===0xffffff?0xffd23f:0x6fb0ff, transparent:true, opacity:.85}));
+  ring.rotation.x=-Math.PI/2; ring.position.y=2; ring.scale.setScalar(scale); root.add(ring);
+
+  root.userData={ glb:true, model, mixer, actions, axe, stack, ring, cur:'idle' };
+  return root;
+}
+
+/* 일꾼까지 GLB 로 쓰면 스킨드 메시가 42개(7명 × 6)가 된다.
+   내장 GPU(Intel Iris Xe)에서 부담이 크고, 일꾼은 멀리서 배경으로 보이는 대상이라
+   플레이어만 모델을 쓰고 일꾼은 절차적으로 남긴다. 좋은 GPU면 아래를 true 로. */
+const GLB_HELPERS=false;
+
+function makeChar(coat,coat2,scale,isPlayer){
+  const useGLB = (isPlayer || GLB_HELPERS) && window.CHAR_GLB && window.SkeletonUtils;
+  if(useGLB) return makeCharGLB(isPlayer?0xffffff:0x9fc0e8, scale);
+  return makeCharProc(coat,coat2,scale);
+}
+
+function makeCharProc(coat,coat2,scale){
+  const g=new TH.Group(); g.scale.setScalar(scale);
+  const cm=toonC(coat), cm2=toonC(coat2);
+  // 앞쪽(+Z)이 정면이다.
+  // 팔·다리는 '피벗 그룹'에 매단다 — 실린더를 직접 돌리면 가운데를 축으로 돌아 어색하다
+  const legs=[];
+  for(const s of [-1,1]){
+    const pv=new TH.Group(); pv.position.set(s*7.5,22,0);
+    const l=mesh(GEO.cyl,MAT.dark,6.5,22,6.5); l.position.y=-11; l.castShadow=true;
+    pv.add(l); g.add(pv); legs.push(pv);
+  }
+  const body=new TH.Mesh(GEO.capsule,cm); body.position.y=36; body.castShadow=true; g.add(body);
+  const arms=[];
+  for(const s of [-1,1]){
+    const pv=new TH.Group(); pv.position.set(s*14.5,48,0);
+    const a=mesh(GEO.cyl,cm2,4.6,21,4.6); a.position.y=-10.5; a.castShadow=true;
+    pv.add(a); g.add(pv); arms.push(pv);
+  }
+  // 도끼 — 오른팔(arms[1]) 손끝에 매달아 팔 회전을 그대로 따라간다
+  const axe=new TH.Group();
+  const handle=mesh(GEO.cyl,MAT.trunk,2.3,30,2.3); axe.add(handle);
+  const blade=mesh(GEO.box,MAT.metal,15,12,4.5); blade.position.set(7,13,0); axe.add(blade);
+  const bevel=mesh(GEO.box,toonC(0xe6edf4),4.5,12,5); bevel.position.set(14,13,0); axe.add(bevel);
+  axe.position.set(0,-20,4); axe.rotation.z=-0.35;
+  arms[1].add(axe);
+  const scarf=mesh(GEO.ring,cm2,12,12,12); scarf.rotation.x=Math.PI/2; scarf.position.y=52; g.add(scarf);
+  const head=mesh(GEO.sphere,MAT.skin,14); head.position.y=64; head.castShadow=true; g.add(head);
+  // 후드는 머리를 '덮는 모자'로 — 구를 통째로 씌우면 얼굴이 사라진다
+  const hood=mesh(GEO.sphere,cm2,15,9.5,15); hood.position.set(0,74,-6); hood.castShadow=true; g.add(hood);
+  // 눈·코는 머리 구(r=14)보다 확실히 바깥으로 — 안쪽이면 통째로 묻힌다
+  for(const s of [-1,1]){
+    const eye=mesh(GEO.sphere,MAT.dark,3); eye.position.set(s*5.4,65,13.6); g.add(eye);
+  }
+  const nose=mesh(GEO.sphere,MAT.snout,3.6); nose.position.set(0,60,14.2); g.add(nose);
+  const stack=new TH.Group(); g.add(stack);   // 개별 아이템이 자기 높이를 갖는다
+  g.userData={body,head,hood,legs,arms,axe,stack};
+  return g;
+}
+
+/* 걷기 · 채집 동작 — 플레이어와 일꾼이 같은 리그를 쓴다 */
+function animChar(g,walk,moving,acting,dt){
+  const u=g.userData;
+  if(u.glb){                                   // GLB: 애니메이션 클립 가중치를 섞는다
+    const want = acting ? 'chop' : (moving ? 'walk' : 'idle');
+    u.cur=want;
+    const k=1-Math.pow(0.0001, dt||1/60);      // 0.2초 정도에 전환
+    for(const name in u.actions){
+      const a=u.actions[name];
+      a.setEffectiveWeight(a.getEffectiveWeight() + ((name===want?1:0)-a.getEffectiveWeight())*k);
+    }
+    if(u.actions.walk) u.actions.walk.setEffectiveTimeScale(1.35);
+    if(u.actions.chop) u.actions.chop.setEffectiveTimeScale(1.5);
+    if(u.axe) u.axe.visible = acting;
+    u.mixer.update(dt||1/60);
+    return;
+  }
+  const sw=Math.sin(walk), amp=moving?0.85:0;
+  u.legs[0].rotation.x= sw*amp;
+  u.legs[1].rotation.x=-sw*amp;
+  u.arms[0].rotation.x=-sw*amp*0.75;
+  if(acting){
+    const c=Math.sin(S.t*15);                     // 도끼질: 들었다(-95°) 내리치기(-9°)
+    u.arms[1].rotation.x=-0.9+c*0.75;
+    u.axe.visible=true;
+  }else{
+    u.arms[1].rotation.x= sw*amp*0.75;
+    u.axe.visible=false;                          // 안 쓸 때는 감춘다 (손에 붙는 애니메이션이 없어서)
+  }
+  const breathe = moving ? Math.abs(sw)*0.045 : Math.sin(S.t*2.2)*0.022;
+  u.body.scale.set(1,1+breathe,1);
+  u.body.position.y=36+(moving?Math.abs(sw)*2.6:0);
+  u.head.position.y=64+(moving?Math.abs(sw)*2.2:0);
+  u.hood.position.y=71+(moving?Math.abs(sw)*2.2:0);
+}
+function makeBear(){
+  const g=new TH.Group();
+  const body=mesh(GEO.sphere,MAT.bear,42,32,34); body.position.y=38; body.castShadow=true; g.add(body);
+  const head=mesh(GEO.sphere,MAT.bear,23); head.position.set(0,56,-36); head.castShadow=true; g.add(head);
+  for(const s of [-1,1]){ const e=mesh(GEO.sphere,MAT.bearDark,9); e.position.set(s*14,74,-34); g.add(e); }
+  const snout=mesh(GEO.sphere,MAT.snout,12,10,11); snout.position.set(0,50,-54); g.add(snout);
+  const nose=mesh(GEO.sphere,MAT.dark,4.6); nose.position.set(0,53,-64); g.add(nose);
+  for(const s of [-1,1]){ const e=mesh(GEO.sphere,MAT.dark,3); e.position.set(s*9,62,-52); g.add(e); }
+  const legs=[];
+  for(const [dx,dz] of [[-20,-18],[20,-18],[-20,20],[20,20]]){
+    const l=mesh(GEO.cyl,MAT.bearDark,10,20,10); l.position.set(dx,10,dz); l.castShadow=true; g.add(l); legs.push(l);
+  }
+  g.userData={body,head,legs};
+  return g;
+}
+function makeDrop(type){
+  const g=new TH.Group();
+  const m=mesh(GEO.box,type==='meat'?MAT.meat:MAT.wood,17,13,13);
+  m.position.y=11; m.castShadow=true; g.add(m);
+  return g;
+}
+
+/* ---------- 눈 ---------- */
+function buildSnow(){
+  const n=1400, pos=new Float32Array(n*3);
+  for(let i=0;i<n;i++){ pos[i*3]=Math.random()*2000-1000; pos[i*3+1]=Math.random()*900; pos[i*3+2]=Math.random()*2000-1000; }
+  const geo=new TH.BufferGeometry(); geo.setAttribute('position',new TH.BufferAttribute(pos,3));
+  snowPts=new TH.Points(geo,new TH.PointsMaterial({color:0xffffff,size:6,sizeAttenuation:true,transparent:true,opacity:.85,depthWrite:false}));
+  snowPts.frustumCulled=false; scene.add(snowPts);
+}
+
+/* ---------- 풀 ---------- */
+function pool(arr,n,make,parent){
+  while(arr.length<n){ const m=make(); parent.add(m); arr.push(m); }
+  for(let i=0;i<arr.length;i++) arr[i].visible = i<n;
+}
+
+/* ---------- 카메라 / 리사이즈 ---------- */
+let camGoal={x:300,z:500};
+const CAM={h:830,z:805,d:1150};
+
+/* 가로 화면(16:9)을 기준으로 거리를 잡고, 세로로 긴 창에서만 완만히 물러선다.
+   가시 폭을 강제로 맞추면 좁은 창에서 카메라가 성층권까지 올라간다. */
+function updateCamRig(){
+  // aspect 가 0·Infinity·NaN 이면 여기서 나온 NaN 이 카메라 좌표에 눌러앉아 영구히 안 그려진다
+  const a=clamp(Number.isFinite(camera.aspect)?camera.aspect:1.6, 0.55, 4);
+  CAM.d=clamp(900*Math.sqrt(1.6/a), 780, 1520);
+  CAM.h=CAM.d*0.72; CAM.z=CAM.d*0.70;               // 약 46° 부감
+  scene.fog.near=CAM.d*1.1; scene.fog.far=CAM.d*3.2;
+}
+function resize(){
+  if(!renderer) return;
+  const w=Math.max(1,innerWidth||1), h=Math.max(1,innerHeight||1);   // 0 크기 방어
+  renderer.setSize(w,h,false);
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+  updateCamRig();
+  const dpr=Math.min(devicePixelRatio||1,2);
+  ov.width=w*dpr; ov.height=h*dpr;
+  ov.style.width=w+'px'; ov.style.height=h+'px';
+  octx.setTransform(dpr,0,0,dpr,0,0);
+}
+addEventListener('resize',resize);
+
+let V3=null, HUD_TOP=120;   // three 로드 후에 만든다 / HUD 하단 y (매 프레임 갱신)
+function toScreen(x,y,z){
+  if(!V3) V3=new TH.Vector3();
+  V3.set(x,y,z).project(camera);
+  return [ (V3.x*.5+.5)*innerWidth, (-V3.y*.5+.5)*innerHeight, V3.z ];
+}
+
+/* ---------- 프레임 ---------- */
+function draw(dt){
+  const k=1-Math.pow(0.0016,dt);           // dt 독립 스무딩
+  // NaN 이 한 번이라도 들어오면 스스로 빠져나오지 못하므로 매 프레임 복구한다
+  if(!Number.isFinite(camera.position.x+camera.position.y+camera.position.z)){
+    updateCamRig(); camera.position.set(P.x,CAM.h,P.y+CAM.z);
+  }
+  camGoal.x=clamp(P.x,300,W-300); camGoal.z=clamp(P.y,220,H-180);
+  camera.position.x+=(camGoal.x-camera.position.x)*k;
+  camera.position.z+=(camGoal.z+CAM.z-camera.position.z)*k;
+  camera.position.y=CAM.h;
+  camera.lookAt(camera.position.x,0,camera.position.z-CAM.z-70);
+
+  sun.position.set(camera.position.x-520,1100,camera.position.z-CAM.z-460);
+  sun.target.position.set(camera.position.x,0,camera.position.z-CAM.z);
+  sun.target.updateMatrixWorld();
+
+  /* 경계(울타리) — 확장하면 바깥으로 밀려난다 */
+  const fr=frontier(), np=nextPlot();
+  GFX.fence.visible=!!np;
+  if(np){
+    GFX.fence.children.forEach((c,i)=>{
+      if(c===GFX.fenceRing){ c.scale.setScalar(fr); c.position.y=52; return; }
+      const a=i/48*6.283;
+      c.position.set(Math.cos(a)*fr, 37+Math.sin(S.t*1.6+i)*2, Math.sin(a)*fr);
+    });
+  }
+  /* 아직 개간 안 한 바깥을 어둡게 */
+  GFX.dark.visible=!!np;
+  if(np) GFX.dark.scale.set(fr,fr,1);       // RingGeometry(1,2) 를 스케일해 안쪽 fr, 바깥 2fr
+  /* 판매대·전초불은 그 구획을 사야 보인다 */
+  GFX.pads.forEach(g=>{ const z=g.userData.zone;
+    g.visible = PLOTS.some(p=>p.zone===z && S.plots[p.id]); });
+  GFX.fires.forEach((g,i)=>{ g.visible = radOf(g.position.x,g.position.z) <= fr+40; });
+  GFX.traps.forEach((g,i)=>{
+    const t=TRAPS[i];
+    g.visible = plotOpen(t.plot);
+    if(!g.visible) return;
+    const bait=g.userData.bait;
+    bait.children.forEach((l,j)=>{ l.visible = j<t.fuel; });
+    g.rotation.y = t.wait>0 ? Math.sin(S.t*14)*.12 : 0;
+  });
+
+  // 나무 / 얼음
+  for(const g of GFX.trees.concat(GFX.ices)){
+    const n=g.userData.node, alive=n.amt>0;
+    g.visible = nodeActive(n);
+    if(!g.visible) continue;
+    g.userData.alive.visible=alive; g.userData.stump.visible=!alive;
+    if(alive){
+      const s=Math.sin(S.t*1.5+n.sway)*.035;
+      g.rotation.z=s;
+      const chopping = (P.actTarget===n && P.actKind==='gather');
+      g.userData.alive.rotation.z = chopping ? Math.sin(S.t*22)*.07 : 0;
+    }
+  }
+
+  // 불꽃
+  for(const f of GFX.flames){
+    const p=S.t*9+f.i*2.1;
+    f.m.scale.y=(40-f.i*9)*(1+Math.sin(p)*.22);
+    f.m.position.y=f.base+Math.sin(p*1.3)*2.5;
+    f.m.rotation.y=p*.4;
+  }
+
+  // 곰
+  pool(GFX.bears,BEARS.length,makeBear,scene);
+  BEARS.forEach((b,i)=>{
+    const g=GFX.bears[i]; g.position.set(b.x,0,b.y);
+    g.rotation.y=Math.atan2(P.x-b.x,P.y-b.y)+Math.PI;
+    const bob=Math.sin(b.ph*5)*.05;
+    g.userData.body.scale.set(42,32*(1+bob),34);
+    g.userData.legs.forEach((l,j)=>{ l.position.y=10+Math.sin(b.ph*7+j*1.6)*3; });
+    const m=b.hit>.3?MAT.bearHit:MAT.bear;
+    g.userData.body.material=m; g.userData.head.material=m;
+  });
+
+  // 바닥 아이템
+  pool(GFX.drops,DROPS.length,()=>makeDrop('meat'),scene);
+  DROPS.forEach((d,i)=>{
+    const g=GFX.drops[i]; g.position.set(d.x,Math.abs(Math.sin(S.t*5+d.x))*7,d.y);
+    g.rotation.y=S.t*2.4+d.x;
+  });
+
+  // 일꾼
+  pool(GFX.helpers,HELPERS.length,()=>makeChar(PAL.helper,PAL.helper2,.82,false),scene);
+  HELPERS.forEach((h,i)=>{
+    const g=GFX.helpers[i]; g.position.set(h.x,0,h.y);
+    const gathering = h.st==='gather';
+    if(h.dir!==undefined && !gathering) g.rotation.y=h.dir;
+    animChar(g, S.t*9, !gathering, gathering, dt);
+    syncStack(g.userData.stack, Array(h.carry).fill('wood'), .82);
+  });
+
+  // 플레이어
+  const pl=GFX.player;
+  pl.position.set(P.x,0,P.y);
+  const moving=!!(P.vx||P.vy);
+  if(P.dir!==undefined && moving) pl.rotation.y=P.dir;
+  else if(P.actKind==='gather' && P.actTarget) pl.rotation.y=Math.atan2(P.actTarget.x-P.x,P.actTarget.y-P.y);
+  animChar(pl, P.walk, moving, !!P.actKind, dt);
+  syncStack(pl.userData.stack,S.stack,1);
+
+  // 눈 — 카메라를 따라다니는 박스 안에서 순환
+  const sp=snowPts.geometry.attributes.position, cx=camera.position.x, cz=camera.position.z-400;
+  for(let i=0;i<sp.count;i++){
+    let y=sp.getY(i)-(70+ (i%7)*11)*dt*3;
+    let x=sp.getX(i)+Math.sin(S.t*.7+i)*14*dt;
+    if(y<0){ y=900; }
+    sp.setXYZ(i,x,y,sp.getZ(i));
+  }
+  sp.needsUpdate=true;
+  snowPts.position.set(cx,0,cz);
+
+  renderer.render(scene,camera);
+  drawOverlay();
+}
+
+function syncStack(group,items,sc){
+  while(group.children.length<items.length){
+    const m=mesh(GEO.box,MAT.wood,27,10,18); m.castShadow=true; group.add(m);
+  }
+  group.children.forEach((m,i)=>{
+    m.visible=i<items.length;
+    if(!m.visible) return;
+    m.material = items[i]==='meat'?MAT.meat : items[i]==='ice'?MAT.ice : MAT.wood;
+    // 머리 위로 솟되 살짝 뒤로 — 몸통에 가리면 스태킹이 안 보이고, 앞이면 얼굴을 덮는다
+    m.position.set(0,76+i*13,-11);
+    m.rotation.x=-.07;
+    m.rotation.y=Math.sin(P.walk*.9+i*.6)*.06;
+  });
+}
+
+/* ---------- 2D 오버레이 (게이지 · 떠오르는 글자 · 코인) ---------- */
+function drawOverlay(){
+  octx.clearRect(0,0,innerWidth,innerHeight);
+  octx.textAlign='center';
+  // 상단 HUD 패널(구역바)의 실제 아래쪽 — 월드 라벨이 이 위로 올라가지 않게 한다
+  const hb=$('hud').getBoundingClientRect();
+  HUD_TOP=hb.bottom;
+  const F='800 %spx "Pretendard","Malgun Gothic",system-ui,sans-serif';
+
+  // 채집 게이지
+  for(const n of NODES){
+    if(n.prog<=0.05||n.amt<=0) continue;
+    if(!nodeActive(n)) continue;
+    const [x,y,z]=toScreen(n.x,170,n.y); if(z>1) continue;
+    const w=62,pr=clamp(n.prog/(GTIME[n.type]/gatherMul()),0,1);
+    octx.fillStyle='rgba(13,21,32,.55)'; rr(x-w/2,y,w,9,5); octx.fill();
+    octx.fillStyle='#ffd23f'; rr(x-w/2,y,w*pr,9,5); octx.fill();
+  }
+  // 곰 체력
+  for(const b of BEARS){
+    const [x,y,z]=toScreen(b.x,110,b.y); if(z>1) continue;
+    const w=70;
+    octx.fillStyle='rgba(13,21,32,.55)'; rr(x-w/2,y,w,9,5); octx.fill();
+    octx.fillStyle='#ff8478'; rr(x-w/2,y,w*clamp(b.hp,0,1),9,5); octx.fill();
+  }
+  // 함정 상태
+  for(const t of TRAPS){
+    if(t.bear || !plotOpen(t.plot)) continue;
+    const [x,y,z]=toScreen(t.x,70,t.y); if(z>1) continue;
+    octx.font=F.replace('%s',13);
+    if(t.wait>0){ octx.fillStyle='#ff9d5c'; octx.fillText('접근 중… '+t.wait.toFixed(1),x,y); }
+    else { octx.fillStyle='rgba(20,35,55,.75)'; octx.fillText('나무 '+t.fuel+'/'+trapWood(),x,y); }
+  }
+  /* 경계 안내 — 플레이어에게서 가장 가까운 울타리 지점에 띄운다 */
+  {
+    const np=nextPlot();
+    if(np){
+      const fr=frontier(), a=Math.atan2(P.y-CY,P.x-CX);
+      const [wx,wy]=atAng(a,fr);
+      const [x,y0,z]=toScreen(wx,190,wy);
+      if(z<=1){
+        const y=Math.max(y0,HUD_TOP+40), enough=S.coin>=np.cost;
+        const near=Math.abs(radOf(P.x,P.y)-fr)<95;
+        octx.fillStyle='rgba(13,21,32,.9)'; rr(x-104,y-36,208,72,12); octx.fill();
+        octx.strokeStyle=enough?'rgba(94,211,154,.85)':'rgba(255,255,255,.18)'; octx.lineWidth=2; octx.stroke();
+        octx.font=F.replace('%s',15); octx.fillStyle='#e8eef7'; octx.fillText(np.name+' 개간',x,y-9);
+        octx.font=F.replace('%s',18); octx.fillStyle=enough?'#ffd23f':'#ff7a7a'; octx.fillText('◆ '+fmt(np.cost),x,y+17);
+        if(near){
+          octx.font=F.replace('%s',12).replace('800','600'); octx.fillStyle='#94a6bd';
+          octx.fillText(enough?'울타리 앞에 잠시 서 있으세요':'코인이 부족합니다',x,y+34);
+        }
+        if(np.prog>0){
+          octx.strokeStyle='#5ed39a'; octx.lineWidth=5; octx.lineCap='round';
+          octx.beginPath(); octx.arc(x,y,62,-1.571,-1.571+6.284*(np.prog/1.4)); octx.stroke(); octx.lineCap='butt';
+        }
+      }
+    }
+  }
+  // 판매 발판 라벨
+  PADS.forEach((p,i)=>{
+    if(!PLOTS.some(q=>q.zone===p.zone && S.plots[q.id])) return;
+    const [x,y,z]=toScreen(p.x,86,p.y); if(z>1) return;
+    octx.font=F.replace('%s',15); octx.fillStyle='rgba(20,35,55,.8)'; octx.fillText('판매',x,y);
+  });
+  // 등짐 카운터
+  {
+    const [x,y,z]=toScreen(P.x,0,P.y+46);
+    if(z<=1){
+      octx.font=F.replace('%s',14);
+      octx.fillStyle=S.stack.length>=capacity()?'#ff7a7a':'rgba(20,35,55,.8)';
+      octx.fillText(S.stack.length+' / '+capacity(),x,y);
+    }
+  }
+  // 파티클
+  for(const p of PARTS){
+    const [x,y,z]=toScreen(p.x,26,p.y); if(z>1) continue;
+    octx.globalAlpha=Math.max(0,1-p.t/p.life); octx.fillStyle=p.c;
+    octx.beginPath(); octx.arc(x,y,p.r*1.5,0,6.284); octx.fill();
+  }
+  octx.globalAlpha=1;
+  // 떠오르는 글자
+  for(const f of FLOATS){
+    const [x,y,z]=toScreen(f.x,90,f.y); if(z>1) continue;
+    const kk=f.t/f.life;
+    octx.globalAlpha=1-kk*kk; octx.font=F.replace('%s',17);
+    octx.lineWidth=4; octx.strokeStyle='rgba(10,20,34,.55)';
+    octx.strokeText(f.txt,x,y-kk*44); octx.fillStyle=f.c; octx.fillText(f.txt,x,y-kk*44);
+  }
+  octx.globalAlpha=1;
+  // 코인
+  for(const c of COINS){
+    const kk=c.t;
+    const wx=c.x+(c.tx-c.x)*kk, wy=c.y+(c.ty-c.y)*kk;
+    const [x,y,z]=toScreen(wx,60,wy); if(z>1) continue;
+    const ey=y-Math.sin(kk*3.14)*72;
+    octx.globalAlpha=1-kk*.5;
+    octx.fillStyle='#ffd23f'; octx.beginPath(); octx.arc(x,ey,8,0,6.284); octx.fill();
+    octx.fillStyle='#8a6600'; octx.font=F.replace('%s',10); octx.fillText('◆',x,ey+3.5);
+  }
+  octx.globalAlpha=1;
+}
+function rr(x,y,w,h,r){ octx.beginPath(); octx.moveTo(x+r,y); octx.arcTo(x+w,y,x+w,y+h,r);
+  octx.arcTo(x+w,y+h,x,y+h,r); octx.arcTo(x,y+h,x,y,r); octx.arcTo(x,y,x+w,y,r); octx.closePath(); }
+
+/* ---------------- DOM UI ---------------- */
+const $=id=>document.getElementById(id);
+const uiCoin=$('uiCoin'), uiStack=$('uiStack'), uiCap=$('uiCap');
+const shopEl=$('shop'), rowsEl=$('rows');
+
+/* 미니맵 — 동심원 구조라 가로 띠 대신 원형이 맞다 */
+const MAPR=1520;                                  // 미니맵이 담는 월드 반지름
+let mmc=null, mmx=null;
+function buildZonebar(){ mmc=$('minimap'); mmx=mmc.getContext('2d'); }
+function drawMinimap(){
+  if(!mmx) return;
+  const S1=mmc.width, C=S1/2, k=(C-4)/MAPR;
+  mmx.clearRect(0,0,S1,S1);
+  // 구역 고리
+  const zc={camp:'#f0e4cf', forest:'#cfe8d6', hunt:'#d3e0ef', glacier:'#c3ddf4'};
+  const rings=[['glacier',1480],['hunt',1200],['forest',780],['camp',CAMP_R]];
+  for(const [id,r] of rings){
+    mmx.beginPath(); mmx.arc(C,C,r*k,0,6.283);
+    mmx.fillStyle=zc[id]; mmx.fill();
+  }
+  // 아직 개간 안 한 바깥은 어둡게
+  const fr=frontier();
+  mmx.save(); mmx.beginPath(); mmx.arc(C,C,(C-4),0,6.283);
+  mmx.arc(C,C,fr*k,0,6.283,true); mmx.fillStyle='rgba(20,34,52,.62)'; mmx.fill('evenodd'); mmx.restore();
+  // 경계선
+  mmx.beginPath(); mmx.arc(C,C,fr*k,0,6.283);
+  mmx.strokeStyle='#ffd23f'; mmx.lineWidth=1.6; mmx.stroke();
+  // 자원 점
+  for(const n of NODES){
+    if(!nodeActive(n)||n.amt<=0) continue;
+    mmx.fillStyle = n.type==='ice' ? '#5ec8ee' : '#3ba86a';
+    mmx.fillRect(C+(n.x-CX)*k-1, C+(n.y-CY)*k-1, 2,2);
+  }
+  // 판매대
+  for(const pd of PADS){ if(!PLOTS.some(q=>q.zone===pd.zone&&S.plots[q.id])) continue;
+    mmx.fillStyle='#ffd23f'; mmx.beginPath(); mmx.arc(C+(pd.x-CX)*k,C+(pd.y-CY)*k,2.6,0,6.283); mmx.fill(); }
+  // 플레이어
+  mmx.fillStyle='#ff5a52'; mmx.beginPath(); mmx.arc(C+(P.x-CX)*k,C+(P.y-CY)*k,3.4,0,6.283); mmx.fill();
+  mmx.strokeStyle='#fff'; mmx.lineWidth=1.2; mmx.stroke();
+}
+function syncUI(){
+  uiCoin.textContent=fmt(S.coin);
+  uiStack.textContent=S.stack.length; uiCap.textContent='/'+capacity();
+  const cur=zoneAt(P.x,P.y);
+  drawMinimap();
+  const nm=$('mapname'); const label=cur.name+' · '+Math.round(radOf(P.x,P.y));
+  if(nm._t!==label){ nm._t=label; nm.textContent=label; }
+
+  $('warmwrap').classList.toggle('show', radOf(P.x,P.y)>COLD_R-60);
+  $('warmwrap').classList.toggle('low',S.warm<35);
+  $('warmfill').style.width=S.warm+'%';
+  $('warmNum').textContent=Math.round(S.warm)+'%';
+
+  shopEl.classList.toggle('open',shopOpen);
+  if(shopOpen) renderShop();
+
+  $('saved').classList.toggle('on',savedT>0);
+  const h=hint(), he=$('hint');
+  if(he._txt!==h){                                      // 바뀔 때만 쓴다 (매 프레임 innerHTML 은 낭비)
+    he._txt=h; he.innerHTML=h; he.style.display = h ? '' : 'none';
+  }
+}
+
+/* 상점 행 정의. 값은 전부 함수로 — 매 프레임 새로 읽되 DOM 은 그대로 둔다. */
+function shopSpecs(){
+  const L=[]; let g='';
+  for(const k of Object.keys(UPG)){
+    const u=UPG[k];
+    if(u.g0!==g){ g=u.g0; L.push({ id:'h_'+g, header:g }); }
+    L.push({ id:k, icon:u.icon, name:u.name,
+      lv:()=> maxedOut(k) ? 'MAX' : S[k],
+      desc:()=> maxedOut(k) ? u.desc(S[k]) : `${u.desc(S[k])} → <em>${u.desc(S[k]+1)}</em>`,
+      price:()=> maxedOut(k) ? null : costOf(k),
+      buy:  maxedOut(k) ? null : ()=>{ S.coin-=costOf(k); S[k]++; } });
+  }
+  L.push({ id:'h_일꾼2', header:'고용' });
+  if(S.helpers<HELPER_MAX){
+    L.push({ id:'helper', icon:'🧑‍🌾', name:'일꾼 고용',
+      lv:()=>S.helpers,
+      desc:()=>`숲에서 자동으로 나무를 베어 팝니다 (최대 ${HELPER_MAX}명)`,
+      price:()=>helperCost(),
+      buy:()=>{ S.coin-=helperCost(); S.helpers++; syncHelpers(); } });
+  }else{
+    L.push({ id:'helperMax', icon:'🧑‍🌾', name:'일꾼 고용',
+      lv:()=>'MAX', desc:()=>`${HELPER_MAX}명 전원 고용 완료`, price:()=>null, buy:null });
+  }
+  if(S.plots.g1){
+    L.push({ id:'flare', icon:'🚀', name:'구조 신호탄',
+      lv:()=>null, desc:()=>'캠프 전원을 탈출시킵니다 — 최종 목표',
+      price:()=>FLARE_COST, buy:()=>{ S.coin-=FLARE_COST; finish(); } });
+  }
+  return L;
+}
+
+let shopSig='';
+/* DOM 을 매 프레임 새로 만들면 mousedown 과 mouseup 사이에 요소가 사라져 click 이 성립하지 않는다.
+   → 행 '구성'이 바뀔 때만 다시 만들고, 평소에는 글자와 상태만 갈아 끼운다. */
+function renderShop(){
+  const specs=shopSpecs(), sig=specs.map(s=>s.id).join(',');
+  if(sig!==shopSig || rowsEl.children.length!==specs.length){
+    shopSig=sig; rowsEl.innerHTML='';
+    for(const sp of specs){
+      if(sp.header){
+        const h=document.createElement('div'); h.className='ghead'; h.textContent=sp.header;
+        rowsEl.appendChild(h); continue;
+      }
+      const d=document.createElement('div'); d.className='row';
+      d.innerHTML=`<div class="ic">${sp.icon}</div><div class="m">`+
+        `<div class="nm">${sp.name}<span class="lv"></span></div><div class="ds"></div></div><div class="pr"></div>`;
+      d.addEventListener('click',()=>{
+        const s=d._spec;
+        if(!s||!s.buy){ sfx.deny(); return; }
+        const p=s.price();
+        if(S.coin<p){ sfx.deny(); return; }
+        s.buy(); sfx.buy(); renderShop();
+      });
+      rowsEl.appendChild(d);
+    }
+  }
+  [...rowsEl.children].forEach((d,i)=>{
+    const sp=specs[i]; if(!sp || sp.header) return;
+    d._spec=sp;
+    const p=sp.price(), lv=sp.lv(), ok=!!sp.buy && S.coin>=p;
+    d.classList.toggle('no',!ok);
+    const lvEl=d.querySelector('.lv'), dsEl=d.querySelector('.ds'), prEl=d.querySelector('.pr');
+    const lvTxt = lv==null ? '' : (lv==='MAX' ? 'MAX' : 'Lv.'+lv);
+    if(lvEl.textContent!==lvTxt){ lvEl.textContent=lvTxt; lvEl.style.display=lvTxt?'':'none'; }
+    const ds=sp.desc(); if(dsEl.innerHTML!==ds) dsEl.innerHTML=ds;
+    const pr = p==null ? '—' : '◆ '+fmt(p); if(prEl.textContent!==pr) prEl.textContent=pr;
+  });
+}
+
+function hint(){
+  if(ending) return '';
+  const z=zoneAt(P.x,P.y).id, myR=radOf(P.x,P.y), np=nextPlot();
+  if(shopOpen) return '항목을 클릭해 강화하세요 · <kbd>E</kbd> 닫기';
+  if(S.stack.length>=capacity()) return '등짐이 <b>가득</b> 찼습니다 — 노란 <b>판매</b> 발판으로 가세요';
+  if(S.coin===0 && S.stack.length===0) return '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 로 <b>나무</b>에 다가가면 자동으로 벱니다';
+  if(S.coin>0 && S.axe===0 && S.bag===0) return '<kbd>E</kbd> 를 눌러 장비를 강화하세요';
+  if(z==='hunt'){
+    const t=TRAPS.find(t=>t.fuel<trapWood()&&!t.bear&&t.wait<=0);
+    if(t && !S.stack.includes('wood')) return '함정에 <b>나무</b>가 필요합니다 — 숲에서 베어 오세요';
+    if(t) return '함정에 다가가면 나무를 <b>미끼</b>로 설치합니다';
+  }
+  if(myR>COLD_R){
+    if(S.warm<=0) return '체온이 <b>바닥</b>입니다 — 위쪽 모닥불에서 <b>고기</b>를 태우세요';
+    if(S.warm<40) return '체온이 떨어지고 있습니다 — 모닥불에 <b>고기</b>를 넣으세요';
+    if(!S.stack.includes('meat')) return '빙하에서 버티려면 <b>고기</b>를 챙겨 오세요';
+  }
+  if(np && S.coin>=np.cost) return '<b>울타리</b> 앞에 서면 「'+np.name+'」이 열립니다';
+  if(S.helpers===0 && S.coin>=HELPER_BASE) return '캠프에서 <b>일꾼</b>을 고용하면 자리를 비워도 벌립니다';
+  return '';
+}
+
+/* ---------------- 모달 ---------------- */
+function modal(title,body,btn,cb){
+  $('mTitle').textContent=title; $('mBody').innerHTML=body; $('mBtn').textContent=btn;
+  $('modal').classList.add('open');
+  $('mBtn').onclick=()=>{ $('modal').classList.remove('open'); ending=false; if(cb)cb(); };
+}
+function finish(){
+  ending=true; S.prestige++; S.runs++;
+  const mult=1+S.prestige*0.25;
+  modal('구조 완료',
+    `신호탄이 눈보라를 뚫고 올라갔습니다.<br><b>${S.runs}번째</b> 겨울을 넘겼습니다.<br><br>
+     생존 기록이 남아 다음 회차의 <span class="g">모든 판매가가 ×${mult.toFixed(2)}</span>로 시작합니다.`,
+    '다음 겨울로',()=>{
+      const p=S.prestige,r=S.runs;
+      S=fresh(); S.prestige=p; S.runs=r;
+      P.x=300; P.y=500; buildWorld(); save();
+    });
+}
+
+/* ---------------- 부팅 ---------------- */
+$('reset').onclick=()=>{
+  if(!confirm('모든 기록을 지우고 처음부터 시작합니다. 계속할까요?')) return;
+  localStorage.removeItem(KEY); location.reload();
+};
+
+let threeReady=false, wantStart=false;
+addEventListener('three-ready',()=>{ threeReady=true; $('startGo').textContent='화면을 클릭해 시작'; if(wantStart) begin(); });
+addEventListener('three-fail',e=>{
+  $('start').classList.add('err');
+  $('startGo').textContent='엔진(three.js)을 불러오지 못했습니다 — 네트워크를 확인하세요';
+});
+
+function boot(){
+  const had=load(); if(!had) S=fresh();
+  P.x=S.px||300; P.y=S.py||500;
+  buildWorld();                 // NODES·TRAPS 를 먼저 채운다 (initThree 가 이걸 읽는다)
+  initThree(); buildZonebar(); resize();
+  camera.position.set(P.x,660,P.y+560);
+  const g=had?offline():0;
+  running=true;
+  if(g>0) modal('자리를 비운 사이',
+    `일꾼 <b>${S.helpers}명</b>이 계속 나무를 베어 팔았습니다.<br><br><span class="g">◆ ${fmt(g)}</span> 획득`,'확인');
+}
+function begin(){
+  try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){}
+  $('start').style.display='none';
+  boot();
+}
+$('start').onclick=()=>{ if(threeReady) begin(); else wantStart=true; };
+
+let prev=performance.now();
+function loop(now){
+  requestAnimationFrame(loop);            // 먼저 재등록 — 한 프레임의 예외가 루프를 죽이지 않도록
+  const dt=Math.min((now-prev)/1000,0.05); prev=now;
+  if(!running) return;
+  try{ update(dt); draw(dt); syncUI(); }
+  catch(e){ if(!window.__loopErr){ window.__loopErr=String(e); console.error('[loop]',e); } }
+}
+requestAnimationFrame(loop);
+addEventListener('beforeunload',()=>{ if(running) save(); });
+</script>
+</body>
+</html>
