@@ -364,6 +364,10 @@ const UPG = {
   coat :{ g0:'생존', icon:'🧥', name:'방한복',   base:2500, g:1.55, max:4, desc:l=>`체온 감소 −${l*18}%` },
 
   crew :{ g0:'일꾼', icon:'📯', name:'호각',     base:600,  g:1.28, desc:l=>`일꾼 속도 +${l*14}%` },
+  cart :{ g0:'일꾼', icon:'🛒', name:'짐수레',   base:420,  g:1.30, desc:l=>`일꾼 운반 ${3+l*2}개 · 먼 자원일수록 효과가 크다` },
+  htier:{ g0:'일꾼', icon:'🎓', name:'일꾼 훈련', base:900, g:2.6, max:2,
+          lock:l=> pickTier()<=l ? '내 곡괭이 등급이 먼저다' : null,
+          desc:l=> ['나무만 캔다','나무·돌을 캔다','나무·돌·석탄·철을 캔다'][Math.min(l,2)] },
 };
 const HELPER_BASE = 300, HELPER_G = 1.45, HELPER_MAX = 6;
 
@@ -420,7 +424,7 @@ function fresh(){
   return {
     coin:0, stack:[],
     axe:0, wide:0, sapl:0, haul:0, reach:0, bag:0, boot:0, sell:0, trade:0,
-    trap:0, coat:0, crew:0, helpers:0,
+    trap:0, coat:0, crew:0, cart:0, htier:0, helpers:0,
     store:Object.fromEntries(RKEYS.map(k=>[k,0])),   // 캠프 창고
     built:{}, tools:{}, depot:0, grind:0, pack:0,                     // 지은 건물 / 만든 도구 / 창고 증축 횟수
     plots:freshPlots(),
@@ -438,6 +442,19 @@ const speed    = ()=> 165 * (1 + S.boot * 0.09);
 const reachOf  = ()=> 62 + S.reach * 11 + (has('glove')?26:0);
 const sellDelay= ()=> 0.085 / (1 + S.sell * 0.35);
 const helperSpd= ()=> 118 * (1 + S.crew * 0.14);
+const helperCarry= ()=> 3 + (S.cart||0)*2;
+/* 일꾼이 캘 수 있는 자원 — 훈련 등급으로 넓어진다 */
+const helperCan = (t)=> t==='wood' || ((S.htier||0)>=1 && t==='stone')
+                                   || ((S.htier||0)>=2 && (t==='coal'||t==='iron'));
+/* 일꾼이 팔러 갈 곳 — 열린 구역의 판매대 중 가장 가까운 곳 */
+function helperPad(x,y){
+  let best=PADS[0], bd=1e18;
+  for(const p of PADS){
+    if(!PLOTS.some(q=>q.zone===p.zone && S.plots[q.id])) continue;
+    const d=dist(x,y,p.x,p.y); if(d<bd){ bd=d; best=p; }
+  }
+  return best;
+}
 const widthOf  = ()=> 1 + S.wide;                       // 동시에 캘 노드 수
 const haulOf   = ()=> 1 + S.haul;                       // 1회 완료당 획득 개수
 const trapWood = ()=> Math.max(1, TRAP_WOOD - S.trap);
@@ -557,7 +574,12 @@ function offline(){
   if(S.helpers<=0 || !S.last) return 0;
   const sec = Math.min((Date.now()-S.last)/1000, (built('icehs')?10:4)*3600);
   if(sec < 60) return 0;
-  const rate = S.helpers * 3 * priceOf('wood') / 17;        // 일꾼 1명 ≈ 17초당 3개
+  // 일꾼이 캘 수 있는 자원의 평균 단가로 계산한다
+  const kinds = RKEYS.filter(helperCan);
+  const avg = kinds.reduce((a,k)=>a+priceOf(k),0) / kinds.length;
+  const carry = helperCarry();
+  const cycle = carry*1.5 + 12*(118/helperSpd());   // 채집 + 왕복
+  const rate = S.helpers * carry * avg / cycle;
   const g = Math.floor(rate*sec);
   if(g>0){ S.coin+=g; }
   return g;
@@ -840,8 +862,11 @@ function update(dt){
       if(!h.tg||h.tg.amt<=0){
         let best=null,bd=1e9;
         for(const n of NODES){
-          if(n.type!=='wood'||n.amt<=0||radOf(n.x,n.y)>780||!nodeActive(n)) continue;  // 일꾼은 숲 범위만
-          const d=dist(h.x,h.y,n.x,n.y); if(d<bd){bd=d;best=n;}
+          if(n.amt<=0 || !helperCan(n.type) || !nodeActive(n)) continue;
+          if(radOf(n.x,n.y) > frontier()) continue;            // 개간한 땅 안에서만
+          // 비싼 자원을 우선한다 — 거리에 가치를 나눠 비교
+          const d=dist(h.x,h.y,n.x,n.y)/Math.max(1,VAL[n.type]);
+          if(d<bd){bd=d;best=n;}
         }
         h.tg=best;
       }
@@ -853,15 +878,23 @@ function update(dt){
       h.prog+=dt;
       if(h.prog>=1.5){
         h.prog=0;
-        if(h.tg&&h.tg.amt>0){ h.tg.amt--; if(h.tg.amt<=0) h.tg.rt=9; h.carry++; burst(h.x,h.y,COL.wood,3); }
-        if(h.carry>=3) h.st='carry';
+        if(h.tg&&h.tg.amt>0){
+          h.tg.amt--; if(h.tg.amt<=0) h.tg.rt=9;
+          h.load=h.load||[]; h.load.push(h.tg.type); h.carry++;
+          burst(h.x,h.y,COL[h.tg.type],3);
+        }
+        if(h.carry>=helperCarry()) h.st='carry';
         else if(!h.tg||h.tg.amt<=0) h.st = h.carry>0 ? 'carry' : 'seek';
       }
     }else if(h.st==='carry'){
-      const p=PADS[0], dx=p.x-h.x, dy=p.y-h.y, d=Math.hypot(dx,dy)||1;
+      const p=helperPad(h.x,h.y), dx=p.x-h.x, dy=p.y-h.y, d=Math.hypot(dx,dy)||1;
       if(d<40){
-        while(h.carry>0){ h.carry--; const g=priceOf('wood'); S.coin+=g; COINS.push({x:h.x,y:h.y-26,tx:p.x,ty:p.y,t:0,v:g}); }
-        h.st='seek'; h.tg=null;
+        h.load=h.load||[];
+        while(h.carry>0){
+          h.carry--; const t=h.load.pop()||'wood', g=priceOf(t);
+          S.coin+=g; COINS.push({x:h.x,y:h.y-26,tx:p.x,ty:p.y,t:0,v:g});
+        }
+        h.load=[]; h.st='seek'; h.tg=null;
       } else { h.x+=dx/d*hs*dt; h.y+=dy/d*hs*dt; h.dir=Math.atan2(dx,dy); }
     }
   }
@@ -1540,7 +1573,7 @@ function draw(dt){
     const gathering = h.st==='gather';
     if(h.dir!==undefined && !gathering) g.rotation.y=h.dir;
     animChar(g, S.t*9, !gathering, gathering, dt);
-    syncStack(g.userData.stack, Array(h.carry).fill('wood'), .82);
+    syncStack(g.userData.stack, (h.load||[]).slice(0,h.carry), .82);
   });
 
   // 플레이어
@@ -1807,11 +1840,14 @@ function shopSpecs(){
   for(const k of Object.keys(UPG)){
     const u=UPG[k];
     if(u.g0!==g){ g=u.g0; L.push({ id:'h_'+g, header:g }); }
+    const lk = u.lock ? u.lock(S[k]) : null;
     L.push({ id:k, icon:u.icon, name:u.name,
       lv:()=> maxedOut(k) ? 'MAX' : S[k],
-      desc:()=> maxedOut(k) ? u.desc(S[k]) : `${u.desc(S[k])} → <em>${u.desc(S[k]+1)}</em>`,
+      desc:()=> maxedOut(k) ? u.desc(S[k])
+              : (lk ? `<em style="color:#ff9a7a">${lk}</em> · ${u.desc(S[k])}`
+                    : `${u.desc(S[k])} → <em>${u.desc(S[k]+1)}</em>`),
       price:()=> maxedOut(k) ? null : costOf(k),
-      buy:  maxedOut(k) ? null : ()=>{ S.coin-=costOf(k); S[k]++; } });
+      buy:  (maxedOut(k)||lk) ? null : ()=>{ S.coin-=costOf(k); S[k]++; } });
   }
   L.push({ id:'h_일꾼2', header:'고용' });
   if(S.helpers<HELPER_MAX){
