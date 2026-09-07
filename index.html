@@ -329,7 +329,7 @@ const PADS = [
   { ...(([x,y])=>({x,y}))(atAng(0.35, 1250)), zone:'glacier' },
 ];
 const CAMP  = { x:CX, y:CY, r:78 };
-const DEPOT = { ...(([x,y])=>({x,y}))(atAng(3.5,150)), r:56 };   // 캠프 창고 — 재료 보관                               // 상점 모닥불 = 월드 중심
+const DEPOT = { ...(([x,y])=>({x,y}))(atAng(4.15,158)), r:58 };  // 캠프 창고 — 건물 사이 빈 구간에                               // 상점 모닥불 = 월드 중심
 /* 전초 모닥불 — 바깥에서 체온을 되살리는 곳. 캠프까지 돌아오지 않아도 되게 */
 const FIRES = [ {...(([x,y])=>({x,y}))(atAng(3.0, 860)), r:86},
                 {...(([x,y])=>({x,y}))(atAng(3.0, 1250)), r:86} ];
@@ -360,27 +360,27 @@ const HELPER_BASE = 300, HELPER_G = 1.45, HELPER_MAX = 6;
    코인 강화와는 별개 트랙. 재료를 캠프 창고에 넣고 만든다.
    곡괭이가 광물 채집을 게이팅한다 — 마인크래프트와 같은 티어 구조. */
 const BUILDINGS = {
-  store : { icon:'📦', name:'창고',     cost:{wood:25},                 desc:'등짐 +4 · 캠프에 자원을 보관',
+  store : { icon:'📦', name:'창고',     cost:{wood:10},                desc:'등짐 +4',
             at:[-118,-58] },
-  saw   : { icon:'🪚', name:'제재소',   cost:{wood:60,stone:20},        desc:'나무 판매가 ×1.6',
+  saw   : { icon:'🪚', name:'제재소',   cost:{wood:26,stone:10},       desc:'나무 판매가 ×1.6',
             at:[118,-70], need:'store' },
-  furn  : { icon:'🔥', name:'화로',     cost:{stone:40,coal:15},        desc:'철·석탄 판매가 ×1.5 · 대장간 전제',
+  furn  : { icon:'🔥', name:'화로',     cost:{stone:20,coal:6},        desc:'철·석탄 판매가 ×1.5 · 대장간 전제',
             at:[-130,72], need:'store' },
-  forge : { icon:'⚒️', name:'대장간',   cost:{stone:60,iron:25},        desc:'철 도구 제작 해금',
+  forge : { icon:'⚒️', name:'대장간',   cost:{stone:32,iron:10},       desc:'철 도구 제작 해금',
             at:[130,74],  need:'furn' },
-  tan   : { icon:'🧵', name:'무두질대', cost:{wood:40,hide:12},         desc:'가죽 판매가 ×1.8 · 모피 제작 해금',
+  tan   : { icon:'🧵', name:'무두질대', cost:{wood:22,hide:6},         desc:'가죽 판매가 ×1.8 · 모피 제작 해금',
             at:[0,-140],  need:'store' },
-  lodge : { icon:'🏹', name:'사냥막사', cost:{wood:50,hide:20,iron:10}, desc:'함정이 미끼 없이도 재가동',
+  lodge : { icon:'🏹', name:'사냥막사', cost:{wood:30,hide:10,iron:6}, desc:'함정이 미끼 없이도 재가동',
             at:[0,150],   need:'tan' },
 };
 const TOOLS = {
-  pickW : { icon:'⛏️', name:'나무 곡괭이', cost:{wood:12},           desc:'<b>돌</b>을 캘 수 있다', tier:1 },
-  pickS : { icon:'⛏️', name:'돌 곡괭이',   cost:{wood:8,stone:16},   desc:'<b>석탄·철</b>을 캘 수 있다', tier:2, need:'pickW' },
-  axeS  : { icon:'🪓', name:'돌도끼',      cost:{wood:10,stone:14},  desc:'채집 속도 ×1.4' },
-  axeI  : { icon:'⚒️', name:'강철 도끼',   cost:{wood:12,iron:20},   desc:'채집 속도 ×1.9', build:'forge' },
-  glove : { icon:'🧤', name:'가죽 장갑',   cost:{hide:14},           desc:'사거리 +26 · 줍기 +20', build:'tan' },
-  coatF : { icon:'🧥', name:'모피 코트',   cost:{hide:22,wood:8},    desc:'체온 감소 −45%', build:'tan' },
-  sled  : { icon:'🛷', name:'썰매',        cost:{wood:30,iron:14},   desc:'등짐 +8', build:'forge' },
+  pickW : { icon:'⛏️', name:'나무 곡괭이', cost:{wood:6},            desc:'<b>돌</b>을 캘 수 있다', tier:1 },
+  pickS : { icon:'⛏️', name:'돌 곡괭이',   cost:{wood:6,stone:10},   desc:'<b>석탄·철</b>을 캘 수 있다', tier:2, need:'pickW' },
+  axeS  : { icon:'🪓', name:'돌도끼',      cost:{wood:8,stone:10},   desc:'채집 속도 ×1.4' },
+  axeI  : { icon:'⚒️', name:'강철 도끼',   cost:{wood:10,iron:12},   desc:'채집 속도 ×1.9', build:'forge' },
+  glove : { icon:'🧤', name:'가죽 장갑',   cost:{hide:8},            desc:'사거리 +26 · 줍기 +20', build:'tan' },
+  coatF : { icon:'🧥', name:'모피 코트',   cost:{hide:14,wood:6},    desc:'체온 감소 −45%', build:'tan' },
+  sled  : { icon:'🛷', name:'썰매',        cost:{wood:20,iron:8},    desc:'등짐 +8', build:'forge' },
 };
 
 /* ---------------- 상태 ---------------- */
@@ -968,10 +968,11 @@ function buildStatic(){
 
   // 캠프 — 텐트 + 모닥불
   const camp=new TH.Group();
-  const tent=mesh(GEO.cone7,MAT.tent,74,96,74); tent.position.set(-96,48,-14); tent.rotation.y=.4; tent.castShadow=true; camp.add(tent);
-  const tent2=mesh(GEO.cone7,MAT.tent2,52,70,52); tent2.position.set(6,35,-96); tent2.rotation.y=1.1; tent2.castShadow=true; camp.add(tent2);
-  for(let i=0;i<4;i++){ // 통나무 울타리
-    const l=mesh(GEO.cyl,MAT.trunk,7,54,7); l.position.set(70+i*26,26,64+ (i%2)*14); l.rotation.z=.12; l.castShadow=true; camp.add(l);
+  // 텐트·장작은 건물 사이 빈 각도(60°, 300°)에 둔다 — 창고 발판과 겹치지 않게
+  const tent=mesh(GEO.cone7,MAT.tent,62,80,62); tent.position.set(56,40,97); tent.rotation.y=.4; tent.castShadow=true; camp.add(tent);
+  const tent2=mesh(GEO.cone7,MAT.tent2,46,62,46); tent2.position.set(58,31,-100); tent2.rotation.y=1.1; tent2.castShadow=true; camp.add(tent2);
+  for(let i=0;i<3;i++){ // 장작더미 — 모닥불 옆
+    const l=mesh(GEO.cyl,MAT.trunk,7,46,7); l.position.set(-20+i*20,23,62); l.rotation.z=.12; l.castShadow=true; camp.add(l);
   }
   camp.add(makeFire(1.35));
   camp.position.set(CAMP.x,0,CAMP.y); scene.add(camp);
@@ -1567,6 +1568,16 @@ function drawOverlay(){
       }
     }
   }
+  // 창고 발판 라벨 — 라벨이 없으면 보관소인지 알 수가 없다
+  {
+    const [x,y,z]=toScreen(DEPOT.x,86,DEPOT.y);
+    if(z<=1){
+      octx.font=F.replace('%s',15); octx.fillStyle='rgba(20,35,55,.8)'; octx.fillText('창고',x,y);
+      const tot=RKEYS.reduce((a,k)=>a+(S.store[k]||0),0);
+      octx.font=F.replace('%s',12).replace('800','600'); octx.fillStyle='rgba(20,35,55,.6)';
+      octx.fillText(tot>0 ? '보관 '+tot+'개' : '재료를 여기에', x, y+17);
+    }
+  }
   // 판매 발판 라벨
   PADS.forEach((p,i)=>{
     if(!PLOTS.some(q=>q.zone===p.zone && S.plots[q.id])) return;
@@ -1793,6 +1804,13 @@ function hint(){
   if(S.stack.length>=capacity()) return '등짐이 <b>가득</b> 찼습니다 — 노란 <b>판매</b> 발판으로 가세요';
   if(S.coin===0 && S.stack.length===0) return '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 로 <b>나무</b>에 다가가면 자동으로 벱니다';
   if(S.coin>0 && S.axe===0 && S.bag===0) return '<kbd>E</kbd> 를 눌러 장비를 강화하세요';
+  {
+    const stored=RKEYS.reduce((a,k)=>a+(S.store[k]||0),0);
+    if(stored===0 && S.coin>=24)
+      return '캠프 <b>창고</b>(파란 발판)에 재료를 넣으면 도구와 건물을 만들 수 있습니다';
+    if(stored>0 && !S.tools.pickW && (S.store.wood||0)>=TOOLS.pickW.cost.wood)
+      return '<kbd>E</kbd> → <b>도구</b> 탭에서 곡괭이를 만들면 <b>돌</b>을 캘 수 있습니다';
+  }
   if(z==='hunt'){
     const t=TRAPS.find(t=>t.fuel<trapWood()&&!t.bear&&t.wait<=0);
     if(t && !S.stack.includes('wood')) return '함정에 <b>나무</b>가 필요합니다 — 숲에서 베어 오세요';
