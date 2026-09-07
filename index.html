@@ -1591,6 +1591,8 @@ function draw(dt){
   DROPS.forEach((d,i)=>{
     const g=GFX.drops[i]; g.position.set(d.x,Math.abs(Math.sin(S.t*5+d.x))*7,d.y);
     g.rotation.y=S.t*2.4+d.x;
+    const locked=d.t<0.35;                       // 아직 못 줍는 상태
+    g.scale.setScalar(locked?0.72:1);
   });
 
   // 일꾼
@@ -2055,7 +2057,7 @@ function bearHit(b){
   const lose=Math.min(S.stack.length, built('lodge')?1:3);
   for(let i=0;i<lose;i++){
     const t=S.stack.pop(), a=Math.random()*6.283;
-    DROPS.push({x:P.x,y:P.y,vx:Math.cos(a)*150,vy:Math.sin(a)*150,type:t,t:0});
+    DROPS.push({x:P.x,y:P.y,vx:Math.cos(a)*190,vy:Math.sin(a)*190,type:t,t:-2.2});
   }
   // 체온도 깎인다 (모피 코트가 있으면 절반)
   S.warm=Math.max(0, S.warm - (has('coatF')?8:16));
