@@ -365,7 +365,7 @@ const HELPER_BASE = 300, HELPER_G = 1.45, HELPER_MAX = 6;
    코인 강화와는 별개 트랙. 재료를 캠프 창고에 넣고 만든다.
    곡괭이가 광물 채집을 게이팅한다 — 마인크래프트와 같은 티어 구조. */
 const BUILDINGS = {
-  store : { icon:'📦', name:'창고',     cost:{wood:10},                desc:'등짐 +4 · 보관 한도 40→150',
+  store : { icon:'📦', name:'창고',     cost:{wood:10},                desc:'등짐 +4 · 보관 한도 30→90',
             at:[-118,-58] },
   saw   : { icon:'🪚', name:'제재소',   cost:{wood:26,stone:10},       desc:'나무 판매가 ×1.6',
             at:[118,-70], need:'store' },
@@ -381,6 +381,10 @@ const BUILDINGS = {
             at:[-62,150], need:'store' },
   icehs : { icon:'🧊', name:'얼음 저장고', cost:{ice:24,wood:18,stone:12}, desc:'오프라인 수익 한도 4→10시간',
             at:[62,150],  need:'store' },
+  /* 반복 제작 — 제작 쪽 유일한 상시 소비처. 안 두면 후반에 재료가 쌓이기만 한다 */
+  depot : { icon:'🏗️', name:'창고 증축', repeat:'depot', need:'store', at:[-150,0],
+            cost: l=>({ wood:Math.round(24*Math.pow(1.7,l)), stone:Math.round(14*Math.pow(1.7,l)) }),
+            desc: l=>`보관 한도 ${capAt(l)} → ${capAt(l+1)}` },
 };
 const TOOLS = {
   pickW : { icon:'⛏️', name:'나무 곡괭이', cost:{wood:6},            desc:'<b>돌</b>을 캘 수 있다', tier:1 },
@@ -405,7 +409,7 @@ function fresh(){
     axe:0, wide:0, sapl:0, haul:0, reach:0, bag:0, boot:0, sell:0, trade:0,
     trap:0, coat:0, crew:0, helpers:0,
     store:Object.fromEntries(RKEYS.map(k=>[k,0])),   // 캠프 창고
-    built:{}, tools:{},                              // 지은 건물 / 만든 도구
+    built:{}, tools:{}, depot:0,                     // 지은 건물 / 만든 도구 / 창고 증축 횟수
     plots:freshPlots(),
     warm:100, prestige:0, runs:0,
     px:CX, py:CY+195, t:0, last:Date.now(),
@@ -434,7 +438,8 @@ const built    = (b)=> !!(S.built&&S.built[b]);
 const pickTier = ()=> has('pickS')?2 : has('pickW')?1 : 0;
 const toolMul  = ()=> has('axeI')?1.9 : has('axeS')?1.4 : 1;
 const storeCap = ()=> (built('store')?4:0) + (has('sled')?8:0);
-const depotCap = ()=> built('store') ? 150 : 40;      // 자원 1종당 보관 한도
+const capAt    = (l)=> 90 + l*50;                     // 창고 지은 뒤 증축 l회일 때
+const depotCap = ()=> built('store') ? capAt(S.depot||0) : 30;   // 자원 1종당 보관 한도
 const sellBonus= (t)=>{
   if(t==='wood' && built('saw'))  return 1.6;
   if((t==='iron'||t==='coal') && built('furn')) return 1.5;
@@ -1008,6 +1013,7 @@ function buildStatic(){
   /* 건물 — 지으면 캠프 안에 나타난다 */
   GFX.builds={};
   for(const id in BUILDINGS){
+    if(BUILDINGS[id].repeat) continue;      // 반복 제작은 세워질 건물이 없다
     const d=BUILDINGS[id], g=new TH.Group();
     if(id==='store'){ for(let i=0;i<4;i++){ const b=mesh(GEO.box,MAT.wood,30,22,24);
         b.position.set(-22+(i%2)*44, 11+Math.floor(i/2)*22, 0); b.castShadow=true; g.add(b); } }
@@ -1775,13 +1781,17 @@ function craftSpecs(kind){
   const done = kind==='bld' ? S.built : S.tools;
   const act  = kind==='bld' ? doBuild : doCraft;
   return Object.keys(TBL).map(id=>{
-    const d=TBL[id], lock=craftLocked(d), owned=!!done[id];
+    const d=TBL[id], lock=craftLocked(d);
+    const lvl=d.repeat ? (S[d.repeat]||0) : 0;
+    const owned = d.repeat ? false : !!done[id];
+    const cost = costOfDef(d);
+    const text = typeof d.desc==='function' ? d.desc(lvl) : d.desc;
     return { id:kind+'_'+id, icon:d.icon, name:d.name,
-      lv:()=> owned ? '완성' : null,
-      desc:()=> owned ? d.desc : (lock ? '<em style="color:#ff9a7a">'+lock+'</em> · '+d.desc : d.desc),
-      price:()=> owned ? null : costText(d.cost),
+      lv:()=> d.repeat ? lvl : (owned ? '완성' : null),
+      desc:()=> owned ? text : (lock ? '<em style="color:#ff9a7a">'+lock+'</em> · '+text : text),
+      price:()=> owned ? null : costText(cost),
       raw:true,
-      buy: (owned||lock||!canPay(d.cost)) ? null : ()=>act(id) };
+      buy: (owned||lock||!canPay(cost)) ? null : ()=>act(id) };
   });
 }
 
@@ -1854,6 +1864,7 @@ function hint(){
 }
 
 /* ---------------- 제작 ---------------- */
+const costOfDef = (d)=> typeof d.cost==='function' ? d.cost(S[d.repeat]||0) : d.cost;
 const canPay = (cost)=> Object.keys(cost).every(k=>(S.store[k]||0)>=cost[k]);
 const payFor = (cost)=>{ for(const k in cost) S.store[k]-=cost[k]; };
 function craftLocked(def){
@@ -1862,8 +1873,14 @@ function craftLocked(def){
   return null;
 }
 function doBuild(id){
-  const d=BUILDINGS[id]; if(S.built[id]||craftLocked(d)||!canPay(d.cost)) { sfx.deny(); return false; }
-  payFor(d.cost); S.built[id]=true; sfx.buy();
+  const d=BUILDINGS[id], cost=costOfDef(d);
+  if(craftLocked(d)||!canPay(cost)) { sfx.deny(); return false; }
+  if(d.repeat){
+    payFor(cost); S[d.repeat]=(S[d.repeat]||0)+1; sfx.buy();
+    float(P.x,P.y-50,d.name+' Lv.'+S[d.repeat],'#5ed39a'); return true;
+  }
+  if(S.built[id]) { sfx.deny(); return false; }
+  payFor(cost); S.built[id]=true; sfx.buy();
   float(CX+d.at[0],CY+d.at[1]-40,d.name+' 완성!','#5ed39a'); burst(CX+d.at[0],CY+d.at[1],0x5ed39a,22);
   return true;
 }
