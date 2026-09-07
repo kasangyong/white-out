@@ -359,6 +359,8 @@ const UPG = {
   sapl :{ g0:'채집', icon:'🌱', name:'묘목',     base:1200, g:3.4, max:SAPLING_MAX, desc:l=>`군락마다 +${l}그루` },
   haul :{ g0:'채집', icon:'🧺', name:'한 아름',   base:1500, g:3.0, max:3, desc:l=>`한 번에 ${1+l}개` },
   // 사거리는 군락 하나를 덮으면 그 이상 의미가 없다 → 상한을 두고, 대신 줍기 반경도 같이 올린다
+  rich :{ g0:'채집', icon:'🌾', name:'풍요',     base:700,  g:1.9, max:6,
+          desc:l=>`자원 하나당 ${4+l}개` },
   reach:{ g0:'채집', icon:'🧤', name:'긴 팔',     base:200,  g:1.34, max:4, desc:l=>`사거리 ${62+l*11} · 줍기 ${44+l*9}` },
 
   bag  :{ g0:'운반', icon:'🎒', name:'등짐',     base:26,   g:1.22, desc:l=>`최대 ${4+l*2}개 운반` },
@@ -407,6 +409,8 @@ const TOOLS = {
   pickS : { icon:'⛏️', name:'돌 곡괭이',   cost:{wood:6,stone:10},   desc:'<b>석탄·철</b>을 캘 수 있다', tier:2, need:'pickW' },
   axeS  : { icon:'🪓', name:'돌도끼',      cost:{wood:8,stone:10},   desc:'채집 속도 ×1.4' },
   axeI  : { icon:'⚒️', name:'강철 도끼',   cost:{wood:10,iron:12},   desc:'채집 속도 ×1.9', build:'forge' },
+  knife : { icon:'🗡️', name:'사냥칼',    cost:{stone:14,wood:8},   desc:'곰 처치 ×1.6' },
+  spear : { icon:'🔱', name:'강철 창',   cost:{iron:16,wood:10},   desc:'곰 처치 ×2.6 · 공격 거리 +22', build:'forge', need:'knife' },
   glove : { icon:'🧤', name:'가죽 장갑',   cost:{hide:8},            desc:'사거리 +26 · 줍기 +20', build:'tan' },
   coatF : { icon:'🧥', name:'모피 코트',   cost:{hide:14,wood:6},    desc:'체온 감소 −45%', build:'tan' },
   sled  : { icon:'🛷', name:'썰매',        cost:{wood:20,iron:8},    desc:'등짐 +8', build:'forge' },
@@ -429,7 +433,7 @@ function freshPlots(){
 function fresh(){
   return {
     coin:0, stack:[],
-    axe:0, wide:0, sapl:0, haul:0, reach:0, bag:0, boot:0, sell:0, trade:0,
+    axe:0, wide:0, sapl:0, haul:0, rich:0, reach:0, bag:0, boot:0, sell:0, trade:0,
     trap:0, coat:0, crew:0, cart:0, htier:0, helpers:0,
     store:Object.fromEntries(RKEYS.map(k=>[k,0])),   // 캠프 창고
     built:{}, tools:{}, depot:0, grind:0, pack:0,                     // 지은 건물 / 만든 도구 / 창고 증축 횟수
@@ -461,6 +465,7 @@ function helperPad(x,y){
   }
   return best;
 }
+const nodeMax  = (n)=> n.max + (S.rich||0);             // 자원 하나가 품은 개수
 const widthOf  = ()=> 1 + S.wide;                       // 동시에 캘 노드 수
 const haulOf   = ()=> 1 + S.haul;                       // 1회 완료당 획득 개수
 const trapWood = ()=> Math.max(1, TRAP_WOOD - S.trap);
@@ -473,6 +478,9 @@ const has      = (t)=> !!(S.tools&&S.tools[t]);
 const built    = (b)=> !!(S.built&&S.built[b]);
 const pickTier = ()=> has('pickS')?2 : has('pickW')?1 : 0;
 const toolMul  = ()=> has('axeI')?1.9 : has('axeS')?1.4 : 1;
+/* 곰 사냥은 도끼가 아니라 무기로 한다 */
+const weaponMul= ()=> has('spear')?2.6 : has('knife')?1.6 : 1;
+const attackR  = ()=> 66 + (has('spear')?22:0);
 const storeCap = ()=> (built('store')?4:0) + (has('sled')?8:0) + (S.pack||0)*2;
 const capAt    = (l)=> 90 + l*50;                     // 창고 지은 뒤 증축 l회일 때
 const depotCap = ()=> built('store') ? capAt(S.depot||0) : 30;   // 자원 1종당 보관 한도
@@ -728,7 +736,7 @@ function update(dt){
     }
   }
   for(const n of NODES){
-    if(n.amt<=0){ n.rt-=dt; if(n.rt<=0){ n.amt=n.max; burst(n.x,n.y,'#ffffff',7); } }
+    if(n.amt<=0){ n.rt-=dt; if(n.rt<=0){ n.amt=nodeMax(n); burst(n.x,n.y,'#ffffff',7); } }
     else if(!n.busy) n.prog=Math.max(0,n.prog-dt*0.6);
   }
 
@@ -771,8 +779,8 @@ function update(dt){
       b.x+=Math.cos(b.ph*0.7)*14*dt; b.y+=Math.sin(b.ph*0.5)*12*dt;
       b.x=clamp(b.x,b.ox-70,b.ox+70); b.y=clamp(b.y,b.oy-60,b.oy+60);
     }
-    if(!shopOpen && pd<66){
-      P.actKind='hunt'; const need=GTIME.meat/gatherMul();
+    if(!shopOpen && pd<attackR()){
+      P.actKind='hunt'; const need=GTIME.meat/weaponMul();
       b.hp-=dt/need; P.act=(1-b.hp)*need; P.actMax=need;
       if(Math.random()<dt*9){ burst(b.x,b.y,'#ffb0a8',2); sfx.chop(); }
       b.hit=1;
