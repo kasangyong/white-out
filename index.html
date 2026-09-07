@@ -1996,7 +1996,7 @@ function hint(){
     if(t) return '함정에 다가가면 나무를 <b>미끼</b>로 설치합니다';
   }
   if(myR>COLD_R){
-    if(S.warm<=0) return '체온이 <b>바닥</b>입니다 — 위쪽 모닥불에서 <b>고기</b>를 태우세요';
+    if(S.warm<=0) return '체온이 <b>바닥</b>입니다 — 이 상태로 곰에게 맞으면 <b>등짐을 전부 잃습니다</b>';
     if(S.warm<40) return '체온이 떨어지고 있습니다 — 모닥불에 <b>고기</b>를 넣으세요';
     if(!S.stack.includes('meat')) return '빙하에서 버티려면 <b>고기</b>를 챙겨 오세요';
   }
@@ -2053,6 +2053,19 @@ function bearHit(b){
   b.cd=BEAR_CD;
   const dx=P.x-b.x, dy=P.y-b.y, d=Math.hypot(dx,dy)||1;
   P.kbx=dx/d*640; P.kby=dy/d*640; P.kbT=0.34; P.hurtT=0.5;
+  /* 얼어붙은 채로 맞으면 쓰러진다 — 등짐을 전부 그 자리에 흘리고 캠프에서 깨어난다.
+     추위·거리·등짐 크기가 한꺼번에 값을 치르는 유일한 지점이다. */
+  if(S.warm<=0){
+    for(const t of S.stack){ const a=Math.random()*6.283;
+      DROPS.push({x:b.x+Math.cos(a)*30,y:b.y+Math.sin(a)*30,
+                  vx:Math.cos(a)*120,vy:Math.sin(a)*120,type:t,t:-1.0}); }
+    S.stack.length=0;
+    P.x=CX; P.y=CY+90; P.kbT=0; P.vx=P.vy=0; S.warm=30;
+    for(const q of BEARS) q.cd=BEAR_CD*2;
+    burst(CX,CY+90,'#ff5a52',26); sfx.bear();
+    float(CX,CY+40,'쓰러졌다 — 등짐을 그 자리에 두고 왔다','#ff7a7a');
+    return;
+  }
   // 짐을 흘린다 (사냥막사가 있으면 덜 흘린다)
   const lose=Math.min(S.stack.length, built('lodge')?1:3);
   for(let i=0;i<lose;i++){
