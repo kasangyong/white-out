@@ -814,7 +814,10 @@ function update(dt){
       t.wait-=dt;
       if(t.wait<=0){
         t.fuel=0;
-        const b={x:t.x+(Math.random()-.5)*40,y:t.y+(Math.random()-.5)*40,hp:1,ox:t.x,oy:t.y,ph:Math.random()*9,hit:0,trap:t};
+        // 나오자마자 때리면 함정을 놓은 쪽이 손해다 — 첫 일격은 사냥꾼 몫으로 준다.
+        // 맨손(2.62초)이면 쿨다운(1.7초) 안에 못 끝내 결국 한 대는 맞는다.
+        const b={x:t.x+(Math.random()-.5)*40,y:t.y+(Math.random()-.5)*40,hp:1,ox:t.x,oy:t.y,
+                 ph:Math.random()*9,hit:0,trap:t,cd:BEAR_CD};
         BEARS.push(b); t.bear=b; sfx.bear();
         burst(t.x,t.y,'#8a6b4f',18); float(t.x,t.y-46,'곰 출현!','#ff7a7a');
       }
