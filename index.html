@@ -318,7 +318,7 @@ const ZONES = [
 /* 구획 — 캠프에서 바깥으로 뻗는 동심 띠. 안쪽부터 하나씩 산다. */
 const PLOTS = [
   { id:'f1', zone:'forest',  r0:250,  r1:450,  cost:0,      name:'캠프 앞 숲' },
-  { id:'f2', zone:'forest',  r0:450,  r1:620,  cost:300,    name:'숲 바깥' },
+  { id:'f2', zone:'forest',  r0:450,  r1:620,  cost:180,    name:'숲 바깥' },
   { id:'f3', zone:'forest',  r0:620,  r1:780,  cost:1200,   name:'깊은 숲' },
   { id:'h1', zone:'hunt',    r0:780,  r1:930,  cost:4000,   name:'사냥터' },
   { id:'h2', zone:'hunt',    r0:930,  r1:1070, cost:11000,  name:'바깥 사냥터' },
@@ -349,13 +349,13 @@ const FIRES = [ {...(([x,y])=>({x,y}))(atAng(3.0, 860)), r:86},
    max 가 있는 항목은 배율이 강해서 상한을 둔다. */
 const UPG = {
   axe  :{ g0:'채집', icon:'🪓', name:'도끼',     base:12,   g:1.16, desc:l=>`채집 속도 +${l*18}%` },
-  wide :{ g0:'채집', icon:'🪵', name:'동시 벌목', base:900,  g:2.3, max:5, desc:l=>`동시에 ${1+l}그루` },
+  wide :{ g0:'채집', icon:'🪵', name:'동시 벌목', base:140,  g:2.15, max:5, desc:l=>`동시에 ${1+l}그루` },
   sapl :{ g0:'채집', icon:'🌱', name:'묘목',     base:1200, g:3.4, max:SAPLING_MAX, desc:l=>`군락마다 +${l}그루` },
   haul :{ g0:'채집', icon:'🧺', name:'한 아름',   base:1500, g:3.0, max:3, desc:l=>`한 번에 ${1+l}개` },
   // 사거리는 군락 하나를 덮으면 그 이상 의미가 없다 → 상한을 두고, 대신 줍기 반경도 같이 올린다
   reach:{ g0:'채집', icon:'🧤', name:'긴 팔',     base:200,  g:1.34, max:4, desc:l=>`사거리 ${62+l*11} · 줍기 ${44+l*9}` },
 
-  bag  :{ g0:'운반', icon:'🎒', name:'등짐',     base:24,   g:1.20, desc:l=>`최대 ${3+l}개 운반` },
+  bag  :{ g0:'운반', icon:'🎒', name:'등짐',     base:26,   g:1.22, desc:l=>`최대 ${4+l*2}개 운반` },
   boot :{ g0:'운반', icon:'🥾', name:'설피',     base:70,   g:1.19, desc:l=>`이동 속도 +${l*9}%` },
   sell :{ g0:'운반', icon:'💰', name:'장부',     base:320,  g:1.22, desc:l=>`판매 속도 ×${(1+l*0.35).toFixed(2)}` },
   trade:{ g0:'운반', icon:'⚖️', name:'거래술',   base:120,  g:1.17, desc:l=>`판매가 +${l*15}%` },
@@ -433,7 +433,7 @@ function fresh(){
 const costOf   = (k)=> Math.round(UPG[k].base * Math.pow(UPG[k].g, S[k]));
 const helperCost= ()=> Math.round(HELPER_BASE * Math.pow(HELPER_G, S.helpers));
 const gatherMul= ()=> (1 + S.axe * 0.18) * toolMul() * (1 + (S.grind||0)*0.08);
-const capacity = ()=> 3 + S.bag + storeCap();
+const capacity = ()=> 4 + S.bag*2 + storeCap();
 const speed    = ()=> 165 * (1 + S.boot * 0.09);
 const reachOf  = ()=> 62 + S.reach * 11 + (has('glove')?26:0);
 const sellDelay= ()=> 0.085 / (1 + S.sell * 0.35);
