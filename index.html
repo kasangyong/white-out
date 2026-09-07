@@ -621,8 +621,11 @@ function nodeActive(n){
 }
 function syncHelpers(){
   HELPERS.length = 0;
-  for(let i=0;i<S.helpers;i++)
-    HELPERS.push({x:600+Math.random()*160,y:300+Math.random()*400,st:'seek',tg:null,carry:0,prog:0,ph:Math.random()*9});
+  // 캠프 둘레에 세운다. 절대 좌표로 두면 월드 크기를 바꿀 때 엉뚱한 데서 태어난다
+  for(let i=0;i<S.helpers;i++){
+    const [x,y]=atAng(Math.random()*6.283, CAMP_R+40+Math.random()*90);
+    HELPERS.push({x,y,st:'seek',tg:null,carry:0,prog:0,ph:Math.random()*9});
+  }
 }
 
 /* ---------------- 저장 ---------------- */
@@ -2193,7 +2196,7 @@ function finish(){
     '다음 겨울로',()=>{
       const p=S.prestige,r=S.runs;
       storm=null; S=fresh(); S.prestige=p; S.runs=r;
-      P.x=300; P.y=500; buildWorld(); save();
+      P.x=CX; P.y=CY+195; buildWorld(); save();      // 캠프 앞. 절대 좌표는 월드를 넓히면 밖이 된다
     });
 }
 
@@ -2220,7 +2223,7 @@ addEventListener('three-fail',e=>{
 
 function boot(){
   const had=load(); if(!had) S=fresh();
-  P.x=S.px||300; P.y=S.py||500;
+  P.x=S.px||CX; P.y=S.py||CY+195;
   buildWorld();                 // NODES·TRAPS 를 먼저 채운다 (initThree 가 이걸 읽는다)
   initThree(); buildZonebar(); resize();
   camera.position.set(P.x,660,P.y+560);
