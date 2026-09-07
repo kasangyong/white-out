@@ -360,7 +360,8 @@ const UPG = {
   haul :{ g0:'채집', icon:'🧺', name:'한 아름',   base:1500, g:3.0, max:3, desc:l=>`한 번에 ${1+l}개` },
   // 사거리는 군락 하나를 덮으면 그 이상 의미가 없다 → 상한을 두고, 대신 줍기 반경도 같이 올린다
   rich :{ g0:'채집', icon:'🌾', name:'풍요',     base:700,  g:1.9, max:6,
-          desc:l=>`자원 하나당 ${4+l}개` },
+          desc:l=>`자원 하나당 ${4+l}개`,
+          after:()=>{ for(const n of NODES) if(n.amt>0) n.amt=nodeMax(n); } },   // 이미 있는 자원도 즉시 채운다
   reach:{ g0:'채집', icon:'🧤', name:'긴 팔',     base:200,  g:1.34, max:4, desc:l=>`사거리 ${62+l*11} · 줍기 ${44+l*9}` },
 
   bag  :{ g0:'운반', icon:'🎒', name:'등짐',     base:26,   g:1.22, desc:l=>`최대 ${4+l*2}개 운반` },
@@ -1022,7 +1023,7 @@ function buildGeo(){
   MAT.trunk=toon(PAL.trunk); MAT.leaf=toon(PAL.leaf); MAT.leaf2=toon(PAL.leaf2);
   MAT.snow=toon(PAL.snow); MAT.ice=toon(PAL.ice,{emissive:0x1a5f7a,emissiveIntensity:.25});
   MAT.iceDeep=toon(PAL.iceDeep);
-  MAT.bear=toon(PAL.bear); MAT.bearHit=toon(0xd98a6a); MAT.bearDark=toon(PAL.bearDark);
+  MAT.bear=toon(PAL.bear); MAT.bearHit=toon(0xd98a6a); MAT.bearMad=toon(0x8c4a3a); MAT.bearDark=toon(PAL.bearDark);
   MAT.snout=toon(PAL.snout); MAT.dark=toon(PAL.dark);
   MAT.skin=toon(PAL.skin);
   MAT.pad=toon(PAL.pad,{emissive:0x9c7a00,emissiveIntensity:.42});
@@ -1582,8 +1583,10 @@ function draw(dt){
     const bob=Math.sin(b.ph*5)*.05;
     g.userData.body.scale.set(42,32*(1+bob),34);
     g.userData.legs.forEach((l,j)=>{ l.position.y=10+Math.sin(b.ph*7+j*1.6)*3; });
-    const m=b.hit>.3?MAT.bearHit:MAT.bear;
+    const m = b.hit>.3 ? MAT.bearHit : (b.mad ? MAT.bearMad : MAT.bear);
     g.userData.body.material=m; g.userData.head.material=m;
+    const s2 = b.mad ? 1.12 : 1;
+    g.scale.setScalar(s2 + (b.mad?Math.sin(S.t*13)*0.03:0));
   });
 
   // 바닥 아이템
@@ -1676,6 +1679,24 @@ function drawOverlay(){
     octx.font=F.replace('%s',13);
     if(t.wait>0){ octx.fillStyle='#ff9d5c'; octx.fillText('접근 중… '+t.wait.toFixed(1),x,y); }
     else { octx.fillStyle='rgba(20,35,55,.75)'; octx.fillText('나무 '+t.fuel+'/'+trapWood(),x,y); }
+  }
+  // 피격 순간 화면 가장자리 붉게
+  if(P.hurtT>0){
+    const a=P.hurtT/0.5;
+    const gr=octx.createRadialGradient(innerWidth/2,innerHeight/2,Math.min(innerWidth,innerHeight)*0.25,
+                                       innerWidth/2,innerHeight/2,Math.max(innerWidth,innerHeight)*0.62);
+    gr.addColorStop(0,'rgba(255,60,50,0)'); gr.addColorStop(1,'rgba(255,60,50,'+(a*0.5).toFixed(3)+')');
+    octx.fillStyle=gr; octx.fillRect(0,0,innerWidth,innerHeight);
+  }
+  // 성난 곰 표시
+  for(const b of BEARS){
+    if(!b.mad) continue;
+    const [x,y,z]=toScreen(b.x,205,b.y); if(z>1) continue;
+    const pulse=1+Math.sin(S.t*11)*0.12;
+    octx.save(); octx.translate(x,y); octx.scale(pulse,pulse);
+    octx.font=F.replace('%s',26); octx.lineWidth=5; octx.strokeStyle='rgba(10,20,34,.7)';
+    octx.strokeText('!',0,0); octx.fillStyle='#ff5a52'; octx.fillText('!',0,0);
+    octx.restore();
   }
   // 화이트아웃 게이지
   if(storm){
@@ -1876,7 +1897,7 @@ function shopSpecs(){
               : (lk ? `<em style="color:#ff9a7a">${lk}</em> · ${u.desc(S[k])}`
                     : `${u.desc(S[k])} → <em>${u.desc(S[k]+1)}</em>`),
       price:()=> maxedOut(k) ? null : costOf(k),
-      buy:  (maxedOut(k)||lk) ? null : ()=>{ S.coin-=costOf(k); S[k]++; } });
+      buy:  (maxedOut(k)||lk) ? null : ()=>{ S.coin-=costOf(k); S[k]++; if(u.after) u.after(); } });
   }
   L.push({ id:'h_일꾼2', header:'고용' });
   if(S.helpers<HELPER_MAX){
@@ -1979,6 +2000,7 @@ function hint(){
     ? '<b>모닥불이 꺼져 갑니다</b> — 창고에서 연료를 가져와 불 곁에 서세요'
     : '불 곁에 서 있으면 등짐의 나무·고기가 자동으로 타 들어갑니다';
   const z=zoneAt(P.x,P.y).id, myR=radOf(P.x,P.y), np=nextPlot();
+  if(BEARS.some(b=>b.mad)) return '<b>곰이 달려듭니다</b> — 맞으면 짐을 흘립니다. 빨리 잡거나 도망치세요';
   if(shopOpen) return '항목을 클릭해 강화하세요 · <kbd>E</kbd> 닫기';
   if(S.stack.length>=capacity()) return '등짐이 <b>가득</b> 찼습니다 — 노란 <b>판매</b> 발판으로 가세요';
   if(S.coin===0 && S.stack.length===0) return '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 로 <b>나무</b>에 다가가면 자동으로 벱니다';
