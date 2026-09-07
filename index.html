@@ -299,7 +299,13 @@ const WARM_MEAT  = 45;  // 고기 1개당 체온 회복
 const WARM_WOOD  = 15;  // 나무도 태울 수 있다 — 고기가 없어도 발이 묶이지 않게
 const COLD_R     = 780; // 이 반지름(숲 끝)부터 추워지기 시작한다
 const SAPLING_MAX = 3;  // '묘목' 최대 레벨 — UPG 가 참조하므로 반드시 그보다 위에 있어야 한다
-const FLARE_COST = 120000;
+/* 최종 목표 — 코인만 모아서 끝나면 클라이맥스가 없다.
+   재료로 신호탄을 만들고, 쏘면 '화이트아웃'을 버텨내야 구조된다. */
+const FLARE_COST = 60000;                                   // 코인
+const FLARE_MAT  = { iron:35, coal:25, wood:60 };           // 재료
+const STORM_TIME = 60;                                      // 버텨야 하는 시간(초)
+const STORM_DRAIN= 11;                                       // 모닥불 연료 감소 /초
+const FUEL_WOOD  = 16, FUEL_MEAT = 34;                      // 연료 1개당 회복
 
 const ZONES = [
   /* 구역 색은 아주 옅게만 — 진하면 색칠한 판이 붙어 있는 것처럼 보인다 */
@@ -394,6 +400,13 @@ const TOOLS = {
   glove : { icon:'🧤', name:'가죽 장갑',   cost:{hide:8},            desc:'사거리 +26 · 줍기 +20', build:'tan' },
   coatF : { icon:'🧥', name:'모피 코트',   cost:{hide:14,wood:6},    desc:'체온 감소 −45%', build:'tan' },
   sled  : { icon:'🛷', name:'썰매',        cost:{wood:20,iron:8},    desc:'등짐 +8', build:'forge' },
+  /* 반복 제작 — 재료의 상시 소비처 */
+  grind : { icon:'🔨', name:'도끼 벼리기', repeat:'grind', build:'forge',
+            cost:l=>({ stone:Math.round(12*Math.pow(1.6,l)), iron:Math.round(5*Math.pow(1.6,l)) }),
+            desc:l=>`채집 속도 +${l*8}% → +${(l+1)*8}%` },
+  pack  : { icon:'🎽', name:'등짐 보강',   repeat:'pack', build:'tan',
+            cost:l=>({ hide:Math.round(9*Math.pow(1.6,l)), wood:Math.round(12*Math.pow(1.6,l)) }),
+            desc:l=>`등짐 +${l*2} → +${(l+1)*2}` },
 };
 
 /* ---------------- 상태 ---------------- */
@@ -409,9 +422,9 @@ function fresh(){
     axe:0, wide:0, sapl:0, haul:0, reach:0, bag:0, boot:0, sell:0, trade:0,
     trap:0, coat:0, crew:0, helpers:0,
     store:Object.fromEntries(RKEYS.map(k=>[k,0])),   // 캠프 창고
-    built:{}, tools:{}, depot:0,                     // 지은 건물 / 만든 도구 / 창고 증축 횟수
+    built:{}, tools:{}, depot:0, grind:0, pack:0,                     // 지은 건물 / 만든 도구 / 창고 증축 횟수
     plots:freshPlots(),
-    warm:100, prestige:0, runs:0,
+    warm:100, prestige:0, runs:0, flareReady:false,
     px:CX, py:CY+195, t:0, last:Date.now(),
   };
 }
@@ -419,7 +432,7 @@ function fresh(){
 /* round 사용: 1.16 등이 이진수로 정확히 표현되지 않아 floor면 25*1.16이 28로 깎인다 */
 const costOf   = (k)=> Math.round(UPG[k].base * Math.pow(UPG[k].g, S[k]));
 const helperCost= ()=> Math.round(HELPER_BASE * Math.pow(HELPER_G, S.helpers));
-const gatherMul= ()=> (1 + S.axe * 0.18) * toolMul();
+const gatherMul= ()=> (1 + S.axe * 0.18) * toolMul() * (1 + (S.grind||0)*0.08);
 const capacity = ()=> 3 + S.bag + storeCap();
 const speed    = ()=> 165 * (1 + S.boot * 0.09);
 const reachOf  = ()=> 62 + S.reach * 11 + (has('glove')?26:0);
@@ -437,7 +450,7 @@ const has      = (t)=> !!(S.tools&&S.tools[t]);
 const built    = (b)=> !!(S.built&&S.built[b]);
 const pickTier = ()=> has('pickS')?2 : has('pickW')?1 : 0;
 const toolMul  = ()=> has('axeI')?1.9 : has('axeS')?1.4 : 1;
-const storeCap = ()=> (built('store')?4:0) + (has('sled')?8:0);
+const storeCap = ()=> (built('store')?4:0) + (has('sled')?8:0) + (S.pack||0)*2;
 const capAt    = (l)=> 90 + l*50;                     // 창고 지은 뒤 증축 l회일 때
 const depotCap = ()=> built('store') ? capAt(S.depot||0) : 30;   // 자원 1종당 보관 한도
 const sellBonus= (t)=>{
@@ -597,6 +610,7 @@ function rng(seed){ let s=seed>>>0; return ()=>{ s=(s*1664525+1013904223)>>>0; r
 
 /* ---------------- 업데이트 (렌더러와 무관 — 3D 전환에도 그대로) ---------------- */
 let shopOpen=false, shopDismiss=false, shopForce=false, ending=false;
+let storm=null;   // {t, fuel} — 신호탄을 쏜 뒤의 화이트아웃
 
 function update(dt){
   S.t+=dt;
@@ -639,9 +653,9 @@ function update(dt){
   /* --- 상점 --- */
   const inCamp = !ending && dist(P.x,P.y,CAMP.x,CAMP.y)<CAMP.r;
   if(!inCamp) shopDismiss=false;          // 캠프를 벗어나면 ESC 로 닫은 상태를 해제
-  if(ending) shopForce=false;
+  if(ending || storm) shopForce=false;
   const wasOpen=shopOpen;
-  shopOpen = (inCamp && !shopDismiss) || (shopForce && !ending);
+  shopOpen = !storm && ((inCamp && !shopDismiss) || (shopForce && !ending));
   if(shopOpen&&!wasOpen) sfx.open();
 
   /* --- 채집 --- */
@@ -744,6 +758,23 @@ function update(dt){
   }
 
   /* --- 체온 (고기 수요를 영구 유지) --- */
+  /* --- 화이트아웃 --- 캠프 모닥불을 STORM_TIME 초 동안 꺼뜨리지 않아야 한다 */
+  if(storm){
+    storm.t+=dt;
+    storm.fuel=Math.max(0, storm.fuel - STORM_DRAIN*dt);
+    // 모닥불 옆이면 등짐의 나무·고기를 자동으로 넣는다
+    if(dist(P.x,P.y,CAMP.x,CAMP.y)<CAMP.r+40 && storm.fuel<100 && P.fuelT<=0){
+      let i=S.stack.lastIndexOf('wood'), gain=FUEL_WOOD;
+      if(i<0){ i=S.stack.lastIndexOf('meat'); gain=FUEL_MEAT; }
+      if(i>=0){
+        S.stack.splice(i,1); storm.fuel=Math.min(100,storm.fuel+gain); P.fuelT=0.18;
+        burst(CAMP.x,CAMP.y,0xff9d5c,8); sfx.chop();
+      }
+    }
+    if(storm.fuel<=0){ endStorm(false); }
+    else if(storm.t>=STORM_TIME){ endStorm(true); }
+  }
+
   /* 체온 — 불에서 멀수록 춥다. 구역별 특수 규칙 대신 '거리'가 곧 난이도다. */
   const myR=radOf(P.x,P.y);
   let atFire = myR<CAMP_R;                       // 캠프 안마당은 무료로 데워진다
@@ -761,12 +792,19 @@ function update(dt){
       }
     }
   } else {
-    const chill=Math.max(0,(myR-COLD_R)/(1480-COLD_R));   // 숲 밖부터 서서히
+    let chill=Math.max(0,(myR-COLD_R)/(1480-COLD_R));   // 숲 밖부터 서서히
+    if(storm) chill=Math.max(chill,0.55)*2.2;           // 화이트아웃 중엔 캠프 근처도 춥다
     S.warm = chill>0 ? Math.max(0,S.warm-warmDrain()*chill*dt) : Math.min(100,S.warm+14*dt);
   }
 
   /* --- 창고 보관 --- 판매대는 코인, 창고는 제작 재료. 매 왕복 선택이 갈린다 */
-  if(dist(P.x,P.y,DEPOT.x,DEPOT.y)<DEPOT.r && S.stack.length>0 && P.sellT<=0){
+  if(storm && dist(P.x,P.y,DEPOT.x,DEPOT.y)<DEPOT.r && S.stack.length<capacity() && P.sellT<=0){
+    // 화이트아웃 중에는 반대로 작동한다 — 연료를 꺼내 간다
+    const k = (S.store.wood||0)>0 ? 'wood' : ((S.store.meat||0)>0 ? 'meat' : null);
+    if(k){ S.store[k]--; S.stack.push(k); P.sellT=sellDelay();
+           COINS.push({x:DEPOT.x,y:DEPOT.y-30,tx:P.x,ty:P.y,t:0,v:0,res:k}); sfx.pick(); }
+  }
+  else if(!storm && dist(P.x,P.y,DEPOT.x,DEPOT.y)<DEPOT.r && S.stack.length>0 && P.sellT<=0){
     const t=S.stack[S.stack.length-1];
     if((S.store[t]||0) < depotCap()){
       S.stack.pop(); S.store[t]=(S.store[t]||0)+1; P.sellT=sellDelay();
@@ -1408,6 +1446,17 @@ function draw(dt){
   camera.position.y=CAM.h;
   camera.lookAt(camera.position.x,0,camera.position.z-CAM.z-70);
 
+  /* 화이트아웃 연출 — 안개가 조여들고 하늘이 하얗게 죽는다 */
+  {
+    const k2=1-Math.pow(0.02,dt);
+    const wantNear = storm ? CAM.d*0.10 : CAM.d*1.1;
+    const wantFar  = storm ? CAM.d*0.85 : CAM.d*3.2;
+    scene.fog.near += (wantNear-scene.fog.near)*k2;
+    scene.fog.far  += (wantFar -scene.fog.far )*k2;
+    scene.background.lerp(new TH.Color(storm ? 0xeaeef2 : PAL.sky), k2);
+    scene.fog.color.copy(scene.background);
+    if(snowPts) snowPts.material.size = storm ? 11 : 6;
+  }
   sun.position.set(camera.position.x-520,1100,camera.position.z-CAM.z-460);
   sun.target.position.set(camera.position.x,0,camera.position.z-CAM.z);
   sun.target.updateMatrixWorld();
@@ -1565,6 +1614,21 @@ function drawOverlay(){
     octx.font=F.replace('%s',13);
     if(t.wait>0){ octx.fillStyle='#ff9d5c'; octx.fillText('접근 중… '+t.wait.toFixed(1),x,y); }
     else { octx.fillStyle='rgba(20,35,55,.75)'; octx.fillText('나무 '+t.fuel+'/'+trapWood(),x,y); }
+  }
+  // 화이트아웃 게이지
+  if(storm){
+    const w=Math.min(innerWidth*0.5,420), x=innerWidth/2-w/2, y=HUD_TOP+22;
+    octx.fillStyle='rgba(13,21,32,.92)'; rr(x-14,y-16,w+28,78,14); octx.fill();
+    octx.strokeStyle='rgba(255,210,63,.65)'; octx.lineWidth=2; octx.stroke();
+    octx.textAlign='center'; octx.font=F.replace('%s',15); octx.fillStyle='#ffd23f';
+    octx.fillText('화이트아웃 \u2014 모닥불을 지켜라  '+Math.ceil(STORM_TIME-storm.t)+'\ucd08', x+w/2, y+4);
+    octx.fillStyle='rgba(255,255,255,.14)'; rr(x,y+14,w,8,4); octx.fill();
+    octx.fillStyle='#8fd6ff'; rr(x,y+14,w*(storm.t/STORM_TIME),8,4); octx.fill();
+    const f=storm.fuel/100;
+    octx.fillStyle='rgba(255,255,255,.14)'; rr(x,y+30,w,12,6); octx.fill();
+    octx.fillStyle = f>0.35 ? '#ff9d5c' : '#ff5a52'; rr(x,y+30,w*f,12,6); octx.fill();
+    octx.font=F.replace('%s',11).replace('800','700'); octx.fillStyle='rgba(255,255,255,.78)';
+    octx.fillText('\ubaa8\ub2ec\ubd88 '+Math.round(storm.fuel)+'%  \u00b7  \ubd88 \uacc1\uc5d0\uc11c \uc790\ub3d9\uc73c\ub85c \ud0dc\uc6b4\ub2e4  \u00b7  \ucc3d\uace0\uc5d0\uc11c \uc5f0\ub8cc\ub97c \uaebc\ub0b4 \uc628\ub2e4', x+w/2, y+53);
   }
   /* 경계 안내 — 플레이어에게서 가장 가까운 울타리 지점에 띄운다 */
   {
@@ -1761,9 +1825,19 @@ function shopSpecs(){
       lv:()=>'MAX', desc:()=>`${HELPER_MAX}명 전원 고용 완료`, price:()=>null, buy:null });
   }
   if(S.plots.g1){
-    L.push({ id:'flare', icon:'🚀', name:'구조 신호탄',
-      lv:()=>null, desc:()=>'캠프 전원을 탈출시킵니다 — 최종 목표',
-      price:()=>FLARE_COST, buy:()=>{ S.coin-=FLARE_COST; finish(); } });
+    if(S.flareReady){
+      L.push({ id:'flareGo', icon:'🚀', name:'신호탄 발사', lv:()=>'준비됨',
+        desc:()=>`<em style="color:#ffd23f">쏘는 순간 화이트아웃이 몰아칩니다</em> · ${STORM_TIME}초 버티기 · 나무 ${Math.ceil(STORM_TIME*STORM_DRAIN/FUEL_WOOD)}개 분량 필요`,
+        price:()=>'—', raw:true, buy:()=>{ startStorm(); shopForce=false; } });
+    }else{
+      const ok = canPay(FLARE_MAT) && S.coin>=FLARE_COST;
+      L.push({ id:'flare', icon:'🚀', name:'구조 신호탄', lv:()=>null,
+        desc:()=>'최종 목표 · 코인과 재료가 함께 든다',
+        price:()=>`<span style="color:${S.coin>=FLARE_COST?'#ffd23f':'#ff7a7a'}">◆${fmt(FLARE_COST)}</span> ${costText(FLARE_MAT)}`,
+        raw:true,
+        buy: ok ? ()=>{ S.coin-=FLARE_COST; payFor(FLARE_MAT); S.flareReady=true;
+                        sfx.buy(); float(P.x,P.y-50,'신호탄 완성','#ffd23f'); } : null });
+    }
   }
   return L;
 }
@@ -1836,6 +1910,9 @@ function renderShop(){
 
 function hint(){
   if(ending) return '';
+  if(storm) return storm.fuel<40
+    ? '<b>모닥불이 꺼져 갑니다</b> — 창고에서 연료를 가져와 불 곁에 서세요'
+    : '불 곁에 서 있으면 등짐의 나무·고기가 자동으로 타 들어갑니다';
   const z=zoneAt(P.x,P.y).id, myR=radOf(P.x,P.y), np=nextPlot();
   if(shopOpen) return '항목을 클릭해 강화하세요 · <kbd>E</kbd> 닫기';
   if(S.stack.length>=capacity()) return '등짐이 <b>가득</b> 찼습니다 — 노란 <b>판매</b> 발판으로 가세요';
@@ -1894,10 +1971,33 @@ function withdraw(k){
   return n;
 }
 function doCraft(id){
-  const d=TOOLS[id]; if(S.tools[id]||craftLocked(d)||!canPay(d.cost)) { sfx.deny(); return false; }
-  payFor(d.cost); S.tools[id]=true; sfx.buy();
+  const d=TOOLS[id], cost=costOfDef(d);
+  if(craftLocked(d)||!canPay(cost)) { sfx.deny(); return false; }
+  if(d.repeat){
+    payFor(cost); S[d.repeat]=(S[d.repeat]||0)+1; sfx.buy();
+    float(P.x,P.y-50,d.name+' Lv.'+S[d.repeat],'#ffd23f'); return true;
+  }
+  if(S.tools[id]) { sfx.deny(); return false; }
+  payFor(cost); S.tools[id]=true; sfx.buy();
   float(P.x,P.y-50,d.name+' 제작!','#ffd23f'); burst(P.x,P.y,0xffd23f,18);
   return true;
+}
+
+/* ---------------- 화이트아웃 (엔딩) ---------------- */
+function startStorm(){
+  storm={t:0, fuel:100};
+  S.flareReady=false;
+  sfx.bear();
+  float(CAMP.x,CAMP.y-80,'신호탄 발사!','#ffd23f'); burst(CAMP.x,CAMP.y,0xffd23f,40);
+}
+function endStorm(win){
+  storm=null;
+  if(win){ finish(); return; }
+  ending=true; S.flareReady=true;          // 신호탄은 남는다 — 다시 쏠 수 있다
+  modal('불이 꺼졌다',
+    `눈보라 속에서 모닥불이 사그라들었습니다.<br>구조대는 신호를 보지 못했습니다.<br><br>`+
+    `신호탄은 아직 남아 있습니다. <b>나무나 고기를 넉넉히 챙겨</b> 다시 쏘세요.`,
+    '다시 준비');
 }
 
 /* ---------------- 모달 ---------------- */
@@ -1914,7 +2014,7 @@ function finish(){
      생존 기록이 남아 다음 회차의 <span class="g">모든 판매가가 ×${mult.toFixed(2)}</span>로 시작합니다.`,
     '다음 겨울로',()=>{
       const p=S.prestige,r=S.runs;
-      S=fresh(); S.prestige=p; S.runs=r;
+      storm=null; S=fresh(); S.prestige=p; S.runs=r;
       P.x=300; P.y=500; buildWorld(); save();
     });
 }
