@@ -300,6 +300,13 @@ const BEAR_SPD   = 132;  // 추격 속도 (플레이어 기본 165 보다 느리
 const BEAR_HIT_R = 62;   // 때리는 거리
 const BEAR_CD    = 1.7;  // 공격 간격(초)
 const BEAR_LEASH = 520;  // 함정에서 이만큼 멀어지면 포기하고 돌아간다
+/* 곰 웨이브 — 빙하를 사고 나면 주기적으로 캠프 모닥불을 노리고 몰려온다.
+   난이도는 h3 에서 정점을 찍고 빙하에서 내려갔다(빙하엔 함정도 곰도 없다). 그 구멍을 메운다. */
+const SIEGE_EVERY  = 180;  // 웨이브가 끝나고 다음 예고까지(초)
+const SIEGE_WARN   = 60;   // 예고 시간
+const SIEGE_BITE   = 4;    // 곰 1마리가 BEAR_CD 마다 깎는 모닥불 연료 (× tough)
+const SIEGE_FIRE   = 100;  // 모닥불 연료. 웨이브 사이에 만재로 회복된다
+const SIEGE_REWARD = 600;  // 공성 곰 1마리 처치 코인 (× tough)
 const WARM_DRAIN = 3.5; // 빙하에서 초당 체온 감소 (5는 체온 심부름이 얼음 수익을 다 먹었다)
 const WARM_MEAT  = 45;  // 고기 1개당 체온 회복
 const WARM_WOOD  = 15;  // 나무도 태울 수 있다 — 고기가 없어도 발이 묶이지 않게
@@ -458,14 +465,17 @@ function fresh(){
     store:Object.fromEntries(RKEYS.map(k=>[k,0])),   // 캠프 창고
     built:{}, tools:{}, depot:0, grind:0, pack:0,                     // 지은 건물 / 만든 도구 / 창고 증축 횟수
     plots:freshPlots(),
-    warm:100, prestige:0, runs:0, flareReady:false,
+    warm:100, prestige:0, runs:0, flareReady:false, wave:0, inSiege:false,
     px:CX, py:CY+195, t:0, last:Date.now(),
   };
 }
 /* 파생 수치 — 조사한 아이들 경제 공식을 그대로 사용 */
 /* round 사용: 1.16 등이 이진수로 정확히 표현되지 않아 floor면 25*1.16이 28로 깎인다 */
-const costOf   = (k)=> Math.round(UPG[k].base * Math.pow(UPG[k].g, S[k]));
-const helperCost= ()=> Math.round(HELPER_BASE * Math.pow(HELPER_G, S.helpers));
+const costScale= ()=> Math.pow(1.5, S.prestige||0);      // 회차마다 값이 오른다
+const plotCost = (p)=> Math.round(p.cost * costScale());
+const flareCost= ()=> Math.round(FLARE_COST * costScale());
+const costOf   = (k)=> Math.round(UPG[k].base * Math.pow(UPG[k].g, S[k]) * costScale());
+const helperCost= ()=> Math.round(HELPER_BASE * Math.pow(HELPER_G, S.helpers) * costScale());
 const gatherMul= ()=> (1 + S.axe * 0.18) * toolMul() * (1 + (S.grind||0)*0.08);
 const capacity = ()=> 4 + S.bag*2 + storeCap();
 const speed    = ()=> 165 * (1 + S.boot * 0.09);
@@ -708,6 +718,7 @@ function rng(seed){ let s=seed>>>0; return ()=>{ s=(s*1664525+1013904223)>>>0; r
 /* ---------------- 업데이트 (렌더러와 무관 — 3D 전환에도 그대로) ---------------- */
 let shopOpen=false, shopDismiss=false, shopForce=false, ending=false;
 let storm=null;   // {t, fuel} — 신호탄을 쏜 뒤의 화이트아웃
+let siege=null;   // {warn, fire, active} — 곰 웨이브. 회차(S.wave)만 세이브에 남는다
 
 function update(dt){
   S.t+=dt;
@@ -739,11 +750,12 @@ function update(dt){
   for(const p of PLOTS) if(p!==np) p.prog=0;    // 진행 중인 구획까지 지우면 영원히 안 채워진다
   if(np){
     const atEdge = Math.abs(radOf(P.x,P.y)-frontier())<95;
-    if(!atEdge || S.coin<np.cost) np.prog=0;
-    if(atEdge && S.coin>=np.cost){
+    const npCost=plotCost(np);
+    if(!atEdge || S.coin<npCost) np.prog=0;
+    if(atEdge && S.coin>=npCost){
       np.prog=(np.prog||0)+dt;
       if(np.prog>=1.4){
-        S.coin-=np.cost; S.plots[np.id]=true; np.prog=0; sfx.open();
+        S.coin-=npCost; S.plots[np.id]=true; np.prog=0; sfx.open();
         float(P.x,P.y-40,np.name+' 개간!','#5ed39a'); burst(P.x,P.y,'#ffd23f',26);
       }
     }
@@ -1784,12 +1796,12 @@ function drawOverlay(){
       const [wx,wy]=atAng(a,fr);
       const [x,y0,z]=toScreen(wx,190,wy);
       if(z<=1){
-        const y=Math.max(y0,HUD_TOP+40), enough=S.coin>=np.cost;
+        const y=Math.max(y0,HUD_TOP+40), enough=S.coin>=plotCost(np);
         const near=Math.abs(radOf(P.x,P.y)-fr)<95;
         octx.fillStyle='rgba(13,21,32,.9)'; rr(x-104,y-36,208,72,12); octx.fill();
         octx.strokeStyle=enough?'rgba(94,211,154,.85)':'rgba(255,255,255,.18)'; octx.lineWidth=2; octx.stroke();
         octx.font=F.replace('%s',15); octx.fillStyle='#e8eef7'; octx.fillText(np.name+' 개간',x,y-9);
-        octx.font=F.replace('%s',18); octx.fillStyle=enough?'#ffd23f':'#ff7a7a'; octx.fillText('◆ '+fmt(np.cost),x,y+17);
+        octx.font=F.replace('%s',18); octx.fillStyle=enough?'#ffd23f':'#ff7a7a'; octx.fillText('◆ '+fmt(plotCost(np)),x,y+17);
         if(near){
           octx.font=F.replace('%s',12).replace('800','600'); octx.fillStyle='#94a6bd';
           octx.fillText(enough?'울타리 앞에 잠시 서 있으세요':'코인이 부족합니다',x,y+34);
@@ -1980,12 +1992,12 @@ function shopSpecs(){
         desc:()=>`<em style="color:#ffd23f">쏘는 순간 화이트아웃이 몰아칩니다</em> · ${STORM_TIME}초 버티기 · 나무 ${Math.ceil(STORM_TIME*STORM_DRAIN/FUEL_WOOD)}개 분량 필요`,
         price:()=>'—', raw:true, buy:()=>{ startStorm(); shopForce=false; } });
     }else{
-      const ok = canPay(FLARE_MAT) && S.coin>=FLARE_COST;
+      const fc = flareCost(), ok = canPay(FLARE_MAT) && S.coin>=fc;
       L.push({ id:'flare', icon:'🚀', name:'구조 신호탄', lv:()=>null,
         desc:()=>'최종 목표 · 코인과 재료가 함께 든다',
-        price:()=>`<span style="color:${S.coin>=FLARE_COST?'#ffd23f':'#ff7a7a'}">◆${fmt(FLARE_COST)}</span> ${costText(FLARE_MAT)}`,
+        price:()=>`<span style="color:${S.coin>=fc?'#ffd23f':'#ff7a7a'}">◆${fmt(fc)}</span> ${costText(FLARE_MAT)}`,
         raw:true,
-        buy: ok ? ()=>{ S.coin-=FLARE_COST; payFor(FLARE_MAT); S.flareReady=true;
+        buy: ok ? ()=>{ S.coin-=fc; payFor(FLARE_MAT); S.flareReady=true;
                         sfx.buy(); float(P.x,P.y-50,'신호탄 완성','#ffd23f'); } : null });
     }
   }
@@ -2086,7 +2098,7 @@ function hint(){
     if(S.warm<40) return '체온이 떨어지고 있습니다 — 모닥불에 <b>고기</b>를 넣으세요';
     if(!S.stack.includes('meat')) return '빙하에서 버티려면 <b>고기</b>를 챙겨 오세요';
   }
-  if(np && S.coin>=np.cost) return '<b>울타리</b> 앞에 서면 「'+np.name+'」이 열립니다';
+  if(np && S.coin>=plotCost(np)) return '<b>울타리</b> 앞에 서면 「'+np.name+'」이 열립니다';
   if(S.helpers===0 && S.coin>=HELPER_BASE) return '캠프에서 <b>일꾼</b>을 고용하면 자리를 비워도 벌립니다';
   return '';
 }
