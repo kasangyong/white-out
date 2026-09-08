@@ -1780,6 +1780,29 @@ function drawOverlay(){
     octx.strokeText('!',0,0); octx.fillStyle='#ff5a52'; octx.fillText('!',0,0);
     octx.restore();
   }
+  // 곰 웨이브 — 예고 / 진행
+  if(siege && !storm && !ending){
+    const w=Math.min(innerWidth*0.5,420), x=innerWidth/2-w/2, y=HUD_TOP+22;
+    const on=siege.active;
+    octx.fillStyle='rgba(13,21,32,.92)'; rr(x-14,y-16,w+28,on?70:52,14); octx.fill();
+    octx.strokeStyle=on?'rgba(255,90,82,.75)':'rgba(255,157,92,.55)'; octx.lineWidth=2; octx.stroke();
+    octx.textAlign='center'; octx.font=F.replace('%s',15);
+    if(on){
+      const left=BEARS.filter(b=>b.siege).length;
+      octx.fillStyle='#ff5a52';
+      octx.fillText(S.wave+'번째 무리 — 남은 곰 '+left, x+w/2, y+4);
+      const f=siege.fire/SIEGE_FIRE;
+      octx.fillStyle='rgba(255,255,255,.14)'; rr(x,y+14,w,12,6); octx.fill();
+      octx.fillStyle = f>0.35 ? '#ff9d5c' : '#ff5a52'; rr(x,y+14,w*f,12,6); octx.fill();
+      octx.font=F.replace('%s',11).replace('800','700'); octx.fillStyle='rgba(255,255,255,.78)';
+      octx.fillText('모닥불 '+Math.round(siege.fire)+'%  ·  캠프를 비우면 곰이 물어뜯는다', x+w/2, y+37);
+    }else{
+      octx.fillStyle='#ff9d5c';
+      octx.fillText('곰 떼가 몰려옵니다  '+Math.ceil(siege.warn)+'초', x+w/2, y+4);
+      octx.fillStyle='rgba(255,255,255,.14)'; rr(x,y+14,w,8,4); octx.fill();
+      octx.fillStyle='#ff9d5c'; rr(x,y+14,w*(1-siege.warn/SIEGE_WARN),8,4); octx.fill();
+    }
+  }
   // 화이트아웃 게이지
   if(storm){
     const w=Math.min(innerWidth*0.5,420), x=innerWidth/2-w/2, y=HUD_TOP+22;
@@ -1914,6 +1937,10 @@ function drawMinimap(){
   // 판매대
   for(const pd of PADS){ if(!plotOpen(pd.plot)) continue;
     mmx.fillStyle='#ffd23f'; mmx.beginPath(); mmx.arc(C+(pd.x-CX)*k,C+(pd.y-CY)*k,2.6,0,6.283); mmx.fill(); }
+  // 공성 곰
+  for(const b of BEARS){ if(!b.siege) continue;
+    mmx.fillStyle='#ff5a52'; mmx.beginPath();
+    mmx.arc(C+(b.x-CX)*k, C+(b.y-CY)*k, 2.2, 0, 6.283); mmx.fill(); }
   // 플레이어
   mmx.fillStyle='#ff5a52'; mmx.beginPath(); mmx.arc(C+(P.x-CX)*k,C+(P.y-CY)*k,3.4,0,6.283); mmx.fill();
   mmx.strokeStyle='#fff'; mmx.lineWidth=1.2; mmx.stroke();
@@ -2083,6 +2110,10 @@ function hint(){
     ? '<b>모닥불이 꺼져 갑니다</b> — 창고에서 연료를 가져와 불 곁에 서세요'
     : '불 곁에 서 있으면 등짐의 나무·고기가 자동으로 타 들어갑니다';
   const z=zoneAt(P.x,P.y).id, myR=radOf(P.x,P.y), np=nextPlot();
+  if(sieging()) return siege.fire<45
+    ? '<b>모닥불이 꺼져 갑니다</b> — 캠프로 돌아가 곰을 잡고 나무를 태우세요'
+    : '<b>곰 떼가 캠프로 갑니다</b> — 막지 않으면 겨울이 끝납니다';
+  if(siege && !siege.active && siege.warn<20) return '곰 떼까지 <b>'+Math.ceil(siege.warn)+'초</b> — 무기와 나무를 챙기세요';
   if(BEARS.some(b=>b.mad)) return '<b>곰이 달려듭니다</b> — 맞으면 짐을 흘립니다. 빨리 잡거나 도망치세요';
   if(shopOpen) return '항목을 클릭해 강화하세요 · <kbd>E</kbd> 닫기';
   if(S.stack.length>=capacity()) return '등짐이 <b>가득</b> 찼습니다 — 노란 <b>판매</b> 발판으로 가세요';
