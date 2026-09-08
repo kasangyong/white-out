@@ -306,7 +306,8 @@ const SIEGE_EVERY  = 180;  // 웨이브가 끝나고 다음 예고까지(초)
 const SIEGE_WARN   = 60;   // 예고 시간
 const SIEGE_BITE   = 4;    // 곰 1마리가 BEAR_CD 마다 깎는 모닥불 연료 (× tough)
 const SIEGE_FIRE   = 100;  // 모닥불 연료. 웨이브 사이에 만재로 회복된다
-const SIEGE_REWARD = 600;  // 공성 곰 1마리 처치 코인 (× tough)
+const SIEGE_REWARD = 600;  // 공성 곰 1마리 처치 코인 (× tough) — 무리를 다 막아야 준다
+const SIEGE_RUSH   = 75;   // 이 시간이 지나면 플레이어를 무시하고 캠프로 간다 (카이팅 방지)
 const WARM_DRAIN = 3.5; // 빙하에서 초당 체온 감소 (5는 체온 심부름이 얼음 수익을 다 먹었다)
 const WARM_MEAT  = 45;  // 고기 1개당 체온 회복
 const WARM_WOOD  = 15;  // 나무도 태울 수 있다 — 고기가 없어도 발이 묶이지 않게
@@ -846,7 +847,8 @@ function update(dt){
     b.cd=Math.max(0,(b.cd||0)-dt);
     const pd=dist(P.x,P.y,b.x,b.y);
     const leashed = !b.siege && dist(b.x,b.y,b.ox,b.oy) > BEAR_LEASH;
-    b.mad = !shopOpen && !leashed && pd < BEAR_AGGRO;
+    const rushing = b.siege && siege && (siege.t||0) > SIEGE_RUSH;   // 끌고 다니면 캠프로 돌아선다
+    b.mad = !shopOpen && !leashed && !rushing && pd < BEAR_AGGRO;
     if(b.mad){
       // 추격
       const dx=P.x-b.x, dy=P.y-b.y, d=Math.hypot(dx,dy)||1;
@@ -873,9 +875,9 @@ function update(dt){
       if(b.hp<=0){
         BEARS.splice(i,1); if(b.trap) b.trap.bear=null;
         burst(b.x,b.y,'#ff8478',22); sfx.bear();
-        if(b.siege){
-          const g=Math.round(SIEGE_REWARD*(b.tough||1)); S.coin+=g;
-          COINS.push({x:b.x,y:b.y-26,tx:CAMP.x,ty:CAMP.y,t:0,v:g});
+        if(b.siege && siege){
+          // 무리를 다 막아야 준다. 즉시 주면 몇 마리만 잡고 새로고침하는 수가 통한다
+          siege.pot=(siege.pot||0)+Math.round(SIEGE_REWARD*(b.tough||1));
         }
         const loot=[...Array(bearMeat()).fill('meat'), ...Array(BEAR_HIDE).fill('hide')];
         for(const type of loot){
@@ -936,7 +938,7 @@ function update(dt){
     if(k){ S.store[k]--; S.stack.push(k); P.sellT=sellDelay();
            COINS.push({x:DEPOT.x,y:DEPOT.y-30,tx:P.x,ty:P.y,t:0,v:0,res:k}); sfx.pick(); }
   }
-  else if(!storm && dist(P.x,P.y,DEPOT.x,DEPOT.y)<DEPOT.r && S.stack.length>0 && P.sellT<=0){
+  else if(!storm && !sieging() && dist(P.x,P.y,DEPOT.x,DEPOT.y)<DEPOT.r && S.stack.length>0 && P.sellT<=0){
     const t=S.stack[S.stack.length-1];
     if((S.store[t]||0) < depotCap()){
       S.stack.pop(); S.store[t]=(S.store[t]||0)+1; P.sellT=sellDelay();
@@ -1781,7 +1783,7 @@ function drawOverlay(){
     octx.restore();
   }
   // 곰 웨이브 — 예고 / 진행
-  if(siege && !storm && !ending){
+  if(siege && !storm && !ending && (siege.active || siege.warn<=SIEGE_WARN)){
     const w=Math.min(innerWidth*0.5,420), x=innerWidth/2-w/2, y=HUD_TOP+22;
     const on=siege.active;
     octx.fillStyle='rgba(13,21,32,.92)'; rr(x-14,y-16,w+28,on?70:52,14); octx.fill();
@@ -2137,7 +2139,7 @@ function hint(){
     if(!S.stack.includes('meat')) return '빙하에서 버티려면 <b>고기</b>를 챙겨 오세요';
   }
   if(np && S.coin>=plotCost(np)) return '<b>울타리</b> 앞에 서면 「'+np.name+'」이 열립니다';
-  if(S.helpers===0 && S.coin>=HELPER_BASE) return '캠프에서 <b>일꾼</b>을 고용하면 자리를 비워도 벌립니다';
+  if(S.helpers===0 && S.coin>=helperCost()) return '캠프에서 <b>일꾼</b>을 고용하면 자리를 비워도 벌립니다';
   return '';
 }
 
@@ -2217,8 +2219,8 @@ function bearHit(b){
 /* ---------------- 곰 웨이브 ---------------- */
 const sieging  = ()=> !!(siege && siege.active);
 /* 멀리 개간했을수록, 회차를 거듭할수록 많이 온다 */
-const siegeN   = ()=> Math.max(1, 2 + (PLOTS.filter(p=>S.plots[p.id]).length - 6)
-                                 + Math.floor((S.wave||0)/2) + (S.prestige||0)*2);
+const siegeN   = ()=> Math.min(14, Math.max(1, 2 + (PLOTS.filter(p=>S.plots[p.id]).length - 6)
+                                 + Math.floor((S.wave||0)/2) + (S.prestige||0)*2));
 const siegeT   = ()=> 1 + Math.max(0,(S.wave||1)-1)*0.15 + (S.prestige||0)*0.5;
 
 /* 등짐의 나무·고기를 하나 태운다. 넣은 연료를 돌려준다 (폭풍·웨이브 공용) */
@@ -2244,6 +2246,7 @@ function updateSiege(dt){
     if(siege.warn<=0) siegeStart();
     return;
   }
+  siege.t=(siege.t||0)+dt;
   if(siege.fire<SIEGE_FIRE) siege.fire=Math.min(SIEGE_FIRE, siege.fire+feedFire());
   if(siege.fire<=0){ siegeEnd(false); return; }
   if(!BEARS.some(b=>b.siege)) siegeEnd(true);
@@ -2257,27 +2260,31 @@ function siegeStart(){
     const [x,y]=atAng(a0+(i-(n-1)/2)*0.05, fr-30-Math.random()*70);
     BEARS.push({x,y,hp:1,ox:x,oy:y,ph:Math.random()*9,hit:0,trap:null,cd:BEAR_CD,siege:true,tough});
   }
-  siege.active=true; siege.fire=SIEGE_FIRE;
+  siege.active=true; siege.fire=SIEGE_FIRE; siege.pot=0; siege.t=0;
   sfx.bear(); float(CAMP.x,CAMP.y-90, S.wave+'번째 무리 — 곰 '+n+'마리','#ff7a7a');
 }
 
 function siegeEnd(win){
   if(win){
-    siege.active=false; siege.warn=SIEGE_EVERY; siege.fire=SIEGE_FIRE;
-    float(CAMP.x,CAMP.y-90,'무리를 막아냈다','#5ed39a'); burst(CAMP.x,CAMP.y,'#5ed39a',24);
+    const g=siege.pot||0;
+    if(g>0){ S.coin+=g; COINS.push({x:CAMP.x,y:CAMP.y-40,tx:CAMP.x,ty:CAMP.y,t:0,v:g}); }
+    siege.active=false; siege.warn=SIEGE_EVERY; siege.fire=SIEGE_FIRE; siege.pot=0; siege.t=0;
+    float(CAMP.x,CAMP.y-90,'무리를 막아냈다  +'+fmt(g),'#5ed39a'); burst(CAMP.x,CAMP.y,'#5ed39a',24);
     return;
   }
   for(let i=BEARS.length-1;i>=0;i--) if(BEARS[i].siege) BEARS.splice(i,1);
-  siege=null; ending=true;
+  const wave=S.wave;
+  // 모달을 닫을 때 초기화하면, 모달이 떠 있는 동안 탭을 닫아 무를 수 있다
+  // (beforeunload 의 save() 가 아직 멀쩡한 S 를 저장한다). 먼저 지우고 알린다.
+  const p=S.prestige, r=S.runs;
+  storm=null; siege=null; S=fresh(); S.prestige=p; S.runs=r;
+  P.x=CX; P.y=CY+195; buildWorld(); syncHelpers(); save();
+  ending=true;
   modal('모닥불이 꺼졌다',
-    `곰 떼가 캠프를 헤집었습니다.<br><b>${S.wave}번째 무리</b>를 넘기지 못했습니다.<br><br>`+
+    `곰 떼가 캠프를 헤집었습니다.<br><b>${wave}번째 무리</b>를 넘기지 못했습니다.<br><br>`+
     `겨울은 여기서 끝나지만 <b>구조 기록은 남습니다.</b><br>`+
     `다음 겨울에는 <b>무기와 나무를 먼저</b> 챙기세요.`,
-    '다음 겨울로', ()=>{
-      const p=S.prestige, r=S.runs;
-      storm=null; S=fresh(); S.prestige=p; S.runs=r;
-      P.x=CX; P.y=CY+195; buildWorld(); save();
-    });
+    '다음 겨울로');
 }
 
 /* ---------------- 화이트아웃 (엔딩) ---------------- */
@@ -2308,7 +2315,8 @@ function finish(){
   const mult=1+S.prestige*0.25;
   modal('구조 완료',
     `신호탄이 눈보라를 뚫고 올라갔습니다.<br><b>${S.runs}번째</b> 겨울을 넘겼습니다.<br><br>
-     생존 기록이 남아 다음 회차의 <span class="g">모든 판매가가 ×${mult.toFixed(2)}</span>로 시작합니다.`,
+     생존 기록이 남아 다음 회차의 <span class="g">모든 판매가가 ×${mult.toFixed(2)}</span>로 시작합니다.<br>
+     대신 <b>구획·강화 값은 ×${Math.pow(1.5,S.prestige).toFixed(2)}</b>, 곰 떼도 더 많아집니다.`,
     '다음 겨울로',()=>{
       const p=S.prestige,r=S.runs;
       storm=null; siege=null; S=fresh(); S.prestige=p; S.runs=r;
