@@ -640,7 +640,7 @@ function syncHelpers(){
 
 /* ---------------- 저장 ---------------- */
 const KEY='whiteout_camp_v1';
-function save(){ S.px=P.x; S.py=P.y; S.last=Date.now(); S.inSiege=!!(siege&&(siege.active||siege.warn<SIEGE_WARN)); try{ localStorage.setItem(KEY,JSON.stringify(S)); flashSaved(); }catch(e){} }
+function save(){ S.px=P.x; S.py=P.y; S.last=Date.now(); S.inSiege=sieging();   /* 웨이브가 실제로 도는 중일 때만 */ try{ localStorage.setItem(KEY,JSON.stringify(S)); flashSaved(); }catch(e){} }
 function load(){
   try{
     const r=localStorage.getItem(KEY); if(!r) return false;
@@ -856,7 +856,7 @@ function update(dt){
       // 캠프 모닥불로 직진한다. 플레이어가 길을 막으면 위에서 이미 걸린다
       const dx=CAMP.x-b.x, dy=CAMP.y-b.y, d=Math.hypot(dx,dy)||1;
       if(d>CAMP.r){ b.x+=dx/d*BEAR_SPD*dt; b.y+=dy/d*BEAR_SPD*dt; }
-      else if(siege && b.cd<=0){
+      else if(siege && !storm && b.cd<=0){     // 폭풍 중엔 updateSiege 가 멈춘다 — 같이 멈춰야 한다
         b.cd=BEAR_CD;
         siege.fire=Math.max(0, siege.fire - SIEGE_BITE*(b.tough||1));
         burst(CAMP.x,CAMP.y,'#ff5a52',10); sfx.bear();
@@ -2234,7 +2234,11 @@ function feedFire(){
 
 function updateSiege(dt){
   if(ending || storm || !S.plots.g1) return;      // 빙하를 사야 시작한다
-  if(!siege) siege={warn:SIEGE_WARN, fire:SIEGE_FIRE, active:false};
+  if(!siege){
+    // 웨이브 도중에 껐다면 곧바로 다시 몰려온다. 새로고침으로 무를 수 있으면 판돈이 가짜다
+    siege={warn: S.inSiege ? 8 : SIEGE_WARN, fire:SIEGE_FIRE, active:false};
+    S.inSiege=false;
+  }
   if(!siege.active){
     siege.warn-=dt;
     if(siege.warn<=0) siegeStart();
