@@ -640,7 +640,7 @@ function syncHelpers(){
 
 /* ---------------- 저장 ---------------- */
 const KEY='whiteout_camp_v1';
-function save(){ S.px=P.x; S.py=P.y; S.last=Date.now(); try{ localStorage.setItem(KEY,JSON.stringify(S)); flashSaved(); }catch(e){} }
+function save(){ S.px=P.x; S.py=P.y; S.last=Date.now(); S.inSiege=!!(siege&&(siege.active||siege.warn<SIEGE_WARN)); try{ localStorage.setItem(KEY,JSON.stringify(S)); flashSaved(); }catch(e){} }
 function load(){
   try{
     const r=localStorage.getItem(KEY); if(!r) return false;
@@ -656,6 +656,7 @@ function flashSaved(){ savedT=1.6; }
 
 /* 오프라인 수익 — 아이들 층의 재접속 동기 */
 function offline(){
+  if(S.inSiege) { S.inSiege=false; return 0; }   // 웨이브 도중에 닫았다 — 그 시간은 안 쳐 준다
   if(S.helpers<=0 || !S.last) return 0;
   const sec = Math.min((Date.now()-S.last)/1000, (built('icehs')?10:4)*3600);
   if(sec < 60) return 0;
@@ -764,9 +765,9 @@ function update(dt){
   /* --- 상점 --- */
   const inCamp = !ending && dist(P.x,P.y,CAMP.x,CAMP.y)<CAMP.r;
   if(!inCamp) shopDismiss=false;          // 캠프를 벗어나면 ESC 로 닫은 상태를 해제
-  if(ending || storm) shopForce=false;
+  if(ending || storm || sieging()) shopForce=false;
   const wasOpen=shopOpen;
-  shopOpen = !storm && ((inCamp && !shopDismiss) || (shopForce && !ending));
+  shopOpen = !storm && !sieging() && ((inCamp && !shopDismiss) || (shopForce && !ending));
   if(shopOpen&&!wasOpen) sfx.open();
 
   /* --- 채집 --- */
@@ -844,25 +845,38 @@ function update(dt){
     const b=BEARS[i]; b.ph+=dt; b.hit=Math.max(0,b.hit-dt*4);
     b.cd=Math.max(0,(b.cd||0)-dt);
     const pd=dist(P.x,P.y,b.x,b.y);
-    const leashed = dist(b.x,b.y,b.ox,b.oy) > BEAR_LEASH;
+    const leashed = !b.siege && dist(b.x,b.y,b.ox,b.oy) > BEAR_LEASH;
     b.mad = !shopOpen && !leashed && pd < BEAR_AGGRO;
     if(b.mad){
       // 추격
       const dx=P.x-b.x, dy=P.y-b.y, d=Math.hypot(dx,dy)||1;
       if(pd>BEAR_HIT_R*0.8){ b.x+=dx/d*BEAR_SPD*dt; b.y+=dy/d*BEAR_SPD*dt; }
       if(pd<BEAR_HIT_R && b.cd<=0){ bearHit(b); }
+    }else if(b.siege){
+      // 캠프 모닥불로 직진한다. 플레이어가 길을 막으면 위에서 이미 걸린다
+      const dx=CAMP.x-b.x, dy=CAMP.y-b.y, d=Math.hypot(dx,dy)||1;
+      if(d>CAMP.r){ b.x+=dx/d*BEAR_SPD*dt; b.y+=dy/d*BEAR_SPD*dt; }
+      else if(siege && b.cd<=0){
+        b.cd=BEAR_CD;
+        siege.fire=Math.max(0, siege.fire - SIEGE_BITE*(b.tough||1));
+        burst(CAMP.x,CAMP.y,'#ff5a52',10); sfx.bear();
+      }
     }else{
       b.x+=Math.cos(b.ph*0.7)*14*dt; b.y+=Math.sin(b.ph*0.5)*12*dt;
       b.x=clamp(b.x,b.ox-70,b.ox+70); b.y=clamp(b.y,b.oy-60,b.oy+60);
     }
     if(!shopOpen && pd<attackR()){
-      P.actKind='hunt'; const need=GTIME.meat/weaponMul();
+      P.actKind='hunt'; const need=GTIME.meat*(b.tough||1)/weaponMul();
       b.hp-=dt/need; P.act=(1-b.hp)*need; P.actMax=need;
       if(Math.random()<dt*9){ burst(b.x,b.y,'#ffb0a8',2); sfx.chop(); }
       b.hit=1;
       if(b.hp<=0){
         BEARS.splice(i,1); if(b.trap) b.trap.bear=null;
         burst(b.x,b.y,'#ff8478',22); sfx.bear();
+        if(b.siege){
+          const g=Math.round(SIEGE_REWARD*(b.tough||1)); S.coin+=g;
+          COINS.push({x:b.x,y:b.y-26,tx:CAMP.x,ty:CAMP.y,t:0,v:g});
+        }
         const loot=[...Array(bearMeat()).fill('meat'), ...Array(BEAR_HIDE).fill('hide')];
         for(const type of loot){
           const a=Math.random()*6.283;
@@ -887,18 +901,11 @@ function update(dt){
   if(storm){
     storm.t+=dt;
     storm.fuel=Math.max(0, storm.fuel - STORM_DRAIN*dt);
-    // 모닥불 옆이면 등짐의 나무·고기를 자동으로 넣는다
-    if(dist(P.x,P.y,CAMP.x,CAMP.y)<CAMP.r+40 && storm.fuel<100 && P.fuelT<=0){
-      let i=S.stack.lastIndexOf('wood'), gain=FUEL_WOOD;
-      if(i<0){ i=S.stack.lastIndexOf('meat'); gain=FUEL_MEAT; }
-      if(i>=0){
-        S.stack.splice(i,1); storm.fuel=Math.min(100,storm.fuel+gain); P.fuelT=0.18;
-        burst(CAMP.x,CAMP.y,0xff9d5c,8); sfx.chop();
-      }
-    }
+    if(storm.fuel<100) storm.fuel=Math.min(100, storm.fuel+feedFire());
     if(storm.fuel<=0){ endStorm(false); }
     else if(storm.t>=STORM_TIME){ endStorm(true); }
   }
+  updateSiege(dt);
 
   /* 체온 — 불에서 멀수록 춥다. 구역별 특수 규칙 대신 '거리'가 곧 난이도다. */
   const myR=radOf(P.x,P.y);
@@ -923,8 +930,8 @@ function update(dt){
   }
 
   /* --- 창고 보관 --- 판매대는 코인, 창고는 제작 재료. 매 왕복 선택이 갈린다 */
-  if(storm && dist(P.x,P.y,DEPOT.x,DEPOT.y)<DEPOT.r && S.stack.length<capacity() && P.sellT<=0){
-    // 화이트아웃 중에는 반대로 작동한다 — 연료를 꺼내 간다
+  if((storm||sieging()) && dist(P.x,P.y,DEPOT.x,DEPOT.y)<DEPOT.r && S.stack.length<capacity() && P.sellT<=0){
+    // 폭풍·웨이브 중에는 반대로 작동한다 — 연료를 꺼내 간다
     const k = (S.store.wood||0)>0 ? 'wood' : ((S.store.meat||0)>0 ? 'meat' : null);
     if(k){ S.store[k]--; S.stack.push(k); P.sellT=sellDelay();
            COINS.push({x:DEPOT.x,y:DEPOT.y-30,tx:P.x,ty:P.y,t:0,v:0,res:k}); sfx.pick(); }
@@ -2176,6 +2183,68 @@ function bearHit(b){
   if(lose) float(P.x,P.y-56,'짐 '+lose+'개 놓침','#ff7a7a');
 }
 
+/* ---------------- 곰 웨이브 ---------------- */
+const sieging  = ()=> !!(siege && siege.active);
+/* 멀리 개간했을수록, 회차를 거듭할수록 많이 온다 */
+const siegeN   = ()=> Math.max(1, 2 + (PLOTS.filter(p=>S.plots[p.id]).length - 6)
+                                 + Math.floor((S.wave||0)/2) + (S.prestige||0)*2);
+const siegeT   = ()=> 1 + (S.wave||0)*0.15 + (S.prestige||0)*0.5;
+
+/* 등짐의 나무·고기를 하나 태운다. 넣은 연료를 돌려준다 (폭풍·웨이브 공용) */
+function feedFire(){
+  if(P.fuelT>0 || dist(P.x,P.y,CAMP.x,CAMP.y)>=CAMP.r+40) return 0;
+  let i=S.stack.lastIndexOf('wood'), gain=FUEL_WOOD;
+  if(i<0){ i=S.stack.lastIndexOf('meat'); gain=FUEL_MEAT; }
+  if(i<0) return 0;
+  S.stack.splice(i,1); P.fuelT=0.18;
+  burst(CAMP.x,CAMP.y,0xff9d5c,8); sfx.chop();
+  return gain;
+}
+
+function updateSiege(dt){
+  if(ending || storm || !S.plots.g1) return;      // 빙하를 사야 시작한다
+  if(!siege) siege={warn:SIEGE_WARN, fire:SIEGE_FIRE, active:false};
+  if(!siege.active){
+    siege.warn-=dt;
+    if(siege.warn<=0) siegeStart();
+    return;
+  }
+  if(siege.fire<SIEGE_FIRE) siege.fire=Math.min(SIEGE_FIRE, siege.fire+feedFire());
+  if(siege.fire<=0){ siegeEnd(false); return; }
+  if(!BEARS.some(b=>b.siege)) siegeEnd(true);
+}
+
+function siegeStart(){
+  S.wave=(S.wave||0)+1;
+  const n=siegeN(), tough=siegeT(), a0=Math.random()*6.283, fr=frontier();
+  for(let i=0;i<n;i++){
+    // 한 각도에 뭉쳐서 — 떼로 읽히고, 바깥에 있으면 그 자리에서 요격할 수 있다
+    const [x,y]=atAng(a0+(i-(n-1)/2)*0.05, fr-30-Math.random()*70);
+    BEARS.push({x,y,hp:1,ox:x,oy:y,ph:Math.random()*9,hit:0,trap:null,cd:BEAR_CD,siege:true,tough});
+  }
+  siege.active=true; siege.fire=SIEGE_FIRE;
+  sfx.bear(); float(CAMP.x,CAMP.y-90, S.wave+'번째 무리 — 곰 '+n+'마리','#ff7a7a');
+}
+
+function siegeEnd(win){
+  if(win){
+    siege.active=false; siege.warn=SIEGE_EVERY; siege.fire=SIEGE_FIRE;
+    float(CAMP.x,CAMP.y-90,'무리를 막아냈다','#5ed39a'); burst(CAMP.x,CAMP.y,'#5ed39a',24);
+    return;
+  }
+  for(let i=BEARS.length-1;i>=0;i--) if(BEARS[i].siege) BEARS.splice(i,1);
+  siege=null; ending=true;
+  modal('모닥불이 꺼졌다',
+    `곰 떼가 캠프를 헤집었습니다.<br><b>${S.wave}번째 무리</b>를 넘기지 못했습니다.<br><br>`+
+    `겨울은 여기서 끝나지만 <b>구조 기록은 남습니다.</b><br>`+
+    `다음 겨울에는 <b>무기와 나무를 먼저</b> 챙기세요.`,
+    '다음 겨울로', ()=>{
+      const p=S.prestige, r=S.runs;
+      storm=null; S=fresh(); S.prestige=p; S.runs=r;
+      P.x=CX; P.y=CY+195; buildWorld(); save();
+    });
+}
+
 /* ---------------- 화이트아웃 (엔딩) ---------------- */
 function startStorm(){
   storm={t:0, fuel:100};
@@ -2207,7 +2276,7 @@ function finish(){
      생존 기록이 남아 다음 회차의 <span class="g">모든 판매가가 ×${mult.toFixed(2)}</span>로 시작합니다.`,
     '다음 겨울로',()=>{
       const p=S.prestige,r=S.runs;
-      storm=null; S=fresh(); S.prestige=p; S.runs=r;
+      storm=null; siege=null; S=fresh(); S.prestige=p; S.runs=r;
       P.x=CX; P.y=CY+195; buildWorld(); save();      // 캠프 앞. 절대 좌표는 월드를 넓히면 밖이 된다
     });
 }
